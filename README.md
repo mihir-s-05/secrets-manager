@@ -7,9 +7,7 @@ Fastify + Prisma backend and an Ink (React) terminal app for managing organizati
 ```
 .
 ├── backend/        # Fastify API + Prisma (SQLite)
-├── my-ink-cli/     # Interactive Ink CLI (TUI)
-├── full_plan.md    # Original requirements
-└── project.md      # High-level goals
+└── my-ink-cli/     # Interactive Ink CLI (TUI)
 ```
 
 ## Requirements
