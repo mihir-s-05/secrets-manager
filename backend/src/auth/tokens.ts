@@ -1,8 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
-import { env } from '../env';
-import { prisma as defaultPrisma } from '../prisma';
-import { signJwtHS256, verifyJwtHS256 } from '../utils/jwt';
+import { env } from '../env.js';
+import { prisma as defaultPrisma } from '../prisma.js';
+import { signJwtHS256, verifyJwtHS256 } from '../utils/jwt.js';
+
+type TransactionClient = Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>;
 
 const accessTokenTtlSeconds = env.ACCESS_TOKEN_TTL_MIN * 60;
 const refreshTokenTtlMs = env.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000;
@@ -72,7 +74,7 @@ export function verifyAccessJwt(token: string): VerifiedAccessToken {
 export async function issueRefreshToken(
   userId: string,
   deviceId: string,
-  prisma: PrismaClient = defaultPrisma
+  prisma: PrismaClient | TransactionClient = defaultPrisma
 ): Promise<string> {
   const token = generateToken();
   const expiresAt = new Date(Date.now() + refreshTokenTtlMs);

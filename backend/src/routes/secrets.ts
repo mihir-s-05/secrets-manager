@@ -1,8 +1,8 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { env } from '../env';
-import { resolvePermissions } from '../lib/perms';
-import { sendError, sendMappedError, sendZodError } from '../utils/errors';
+import { env } from '../env.js';
+import { resolvePermissions } from '../lib/perms.js';
+import { sendError, sendMappedError, sendZodError } from '../utils/errors.js';
 
 type NormalizedAcl = {
   principal: 'org' | 'user' | 'team';
@@ -490,13 +490,13 @@ const secretsRoutes: FastifyPluginAsync = async (fastify) => {
 
             for (const acl of normalizedAcls) {
               await tx.secretAcl.upsert({
-                where: {
-                  secretId_principal_principalId: {
-                    secretId: secret.id,
-                    principal: acl.principal,
-                    principalId: acl.principalId
-                  }
-                },
+                  where: {
+                    secretId_principal_principalId: {
+                      secretId: secret.id,
+                      principal: acl.principal,
+                      principalId: acl.principalId as string
+                    }
+                  },
                 update: {
                   canRead: acl.canRead,
                   canWrite: acl.canWrite

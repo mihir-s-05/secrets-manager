@@ -46,6 +46,8 @@ const schema = z.object({
     .positive({ message: 'REFRESH_TOKEN_TTL_DAYS must be positive' })
     .default(30),
   ADMIN_IMPLICIT_ACCESS: booleanFromEnv,
+  // Comma-separated list of emails to grant admin on login
+  ADMIN_EMAILS: z.string().default(''),
   GITHUB_CLIENT_ID: z.string().default(''),
   GITHUB_CLIENT_SECRET: z.string().default('')
 });

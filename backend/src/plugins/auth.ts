@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { Prisma } from '../prisma';
-import { sendError } from '../utils/errors';
-import { verifyAccessJwt } from '../auth/tokens';
+import type { Prisma } from '../prisma.js';
+import { sendError } from '../utils/errors.js';
+import { verifyAccessJwt } from '../auth/tokens.js';
 
 async function loadUser(prisma: Prisma, userId: string) {
   return prisma.user.findUnique({
@@ -46,7 +46,7 @@ async function authenticateRequest(
       id: user.id,
       orgId: user.orgId,
       isAdmin: user.isAdmin,
-      teamIds: new Set(user.memberships.map((membership) => membership.teamId))
+      teamIds: new Set(user.memberships.map((membership: { teamId: string }) => membership.teamId))
     };
 
     return undefined;

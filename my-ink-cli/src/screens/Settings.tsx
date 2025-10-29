@@ -7,6 +7,7 @@ import KeyLegend from '../components/KeyLegend.js';
 import {useAppServices} from '../app/App.js';
 import {useRouter} from '../app/Router.js';
 import {logout as logoutApi} from '../api/auth.js';
+import {userSchema} from '../types/dto.js';
 
 const Settings: React.FC = () => {
   const {session, updateSession, clearSession, resetSession, notify, client, setEditing, setEscapeHandler} =
@@ -41,6 +42,11 @@ const Settings: React.FC = () => {
 
     if (input === 'x') {
       handleReset();
+      return;
+    }
+
+    if (input === 'r') {
+      void handleReloadProfile();
     }
   });
 
@@ -79,6 +85,20 @@ const Settings: React.FC = () => {
     router.replace('HOME');
   }, [notify, resetSession, router]);
 
+  const handleReloadProfile = useCallback(async () => {
+    setSaving(true);
+    try {
+      const response = await client.request('/me', {schema: userSchema});
+      const user = userSchema.parse(response.data);
+      updateSession({user});
+      notify('Profile reloaded.', 'success');
+    } catch (err) {
+      notify(`Failed to reload profile: ${(err as Error).message}`, 'error');
+    } finally {
+      setSaving(false);
+    }
+  }, [client, notify, updateSession]);
+
   return (
     <Box flexDirection="column" gap={1}>
       <Text color="cyan">Settings</Text>
@@ -91,6 +111,7 @@ const Settings: React.FC = () => {
         <Text>- Press Ctrl+S to save</Text>
         <Text>- Press l to logout</Text>
         <Text>- Press x to reset app state</Text>
+        <Text>- Press r to reload profile</Text>
       </Box>
       {saving ? <Spinner label="Processing" /> : null}
       <KeyLegend
@@ -98,6 +119,7 @@ const Settings: React.FC = () => {
           {key: 'Ctrl+S', description: 'Save server URL'},
           {key: 'l', description: 'Logout'},
           {key: 'x', description: 'Reset app state'},
+          {key: 'r', description: 'Reload profile from server'},
           {key: 'Esc', description: 'Back'}
         ]}
       />

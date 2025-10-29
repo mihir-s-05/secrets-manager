@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { prisma } from '../prisma';
+import { prisma } from '../prisma.js';
 
 export function registerPrisma(app: FastifyInstance) {
   if (app.hasDecorator('prisma')) {

@@ -3,17 +3,17 @@ import sensible from '@fastify/sensible';
 import type { FastifyInstance } from 'fastify';
 import fastify from 'fastify';
 import { fileURLToPath } from 'node:url';
-import pkg from '../package.json';
-import { env } from './env';
-import authRoutes from './routes/auth';
-import meRoutes from './routes/me';
-import directoryRoutes from './routes/directory';
-import adminRoutes from './routes/admin';
-import secretsRoutes from './routes/secrets';
-import { HttpError, mapPrismaError, sendError, sendZodError } from './utils/errors';
+import pkg from '../package.json' with { type: 'json' };
+import { env } from './env.js';
+import authRoutes from './routes/auth.js';
+import meRoutes from './routes/me.js';
+import directoryRoutes from './routes/directory.js';
+import adminRoutes from './routes/admin.js';
+import secretsRoutes from './routes/secrets.js';
+import { HttpError, mapPrismaError, sendError, sendZodError } from './utils/errors.js';
 import { ZodError } from 'zod';
-import { registerPrisma } from './plugins/prisma';
-import { registerAuthDecorators } from './plugins/auth';
+import { registerPrisma } from './plugins/prisma.js';
+import { registerAuthDecorators } from './plugins/auth.js';
 
 function allowLocalhostOrigin(origin: string | undefined): boolean {
   if (!origin) {

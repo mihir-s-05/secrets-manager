@@ -1,5 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 
+type TransactionClient = Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>;
+
 export type UserResponse = {
   id: string;
   email: string;
@@ -15,7 +17,7 @@ export type UserResponse = {
   }>;
 };
 
-export async function loadUserWithOrgAndTeams(prisma: PrismaClient, userId: string) {
+export async function loadUserWithOrgAndTeams(prisma: PrismaClient | TransactionClient, userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     include: {

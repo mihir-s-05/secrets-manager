@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { sendError } from '../utils/errors';
-import { loadUserWithOrgAndTeams } from './user-utils';
+import { sendError } from '../utils/errors.js';
+import { loadUserWithOrgAndTeams } from './user-utils.js';
 
 const meRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get(

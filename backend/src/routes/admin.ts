@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { sendError, sendZodError } from '../utils/errors';
+import { sendError, sendZodError } from '../utils/errors.js';
 
 const adminRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post(

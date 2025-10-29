@@ -1,19 +1,19 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { env } from '../env';
+import { env } from '../env.js';
 import {
   exchangeDeviceCodeForToken,
   fetchGithubUser,
   requestDeviceCode
-} from '../auth/deviceflow';
+} from '../auth/deviceflow.js';
 import {
   issueRefreshToken,
   revokeRefreshToken,
   signAccessJwt,
   verifyRefreshToken
-} from '../auth/tokens';
-import { sendError, sendZodError } from '../utils/errors';
-import { loadUserWithOrgAndTeams } from './user-utils';
+} from '../auth/tokens.js';
+import { sendError, sendZodError } from '../utils/errors.js';
+import { loadUserWithOrgAndTeams } from './user-utils.js';
 
 type DeviceSession = {
   deviceCode: string;
@@ -282,6 +282,20 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
               oauthSub: githubProfile.id
             }
           });
+        }
+
+        // Bootstrap admin based on configured emails
+        try {
+          const adminEmails = (env.ADMIN_EMAILS || '')
+            .split(',')
+            .map((e: string) => e.trim().toLowerCase())
+            .filter(Boolean);
+          const shouldBeAdmin = adminEmails.includes(githubProfile.email.toLowerCase());
+          if (shouldBeAdmin && !user.isAdmin) {
+            user = await tx.user.update({ where: { id: user.id }, data: { isAdmin: true } });
+          }
+        } catch {
+          // ignore parsing errors; proceed without bootstrap
         }
 
         const loaded = await loadUserWithOrgAndTeams(tx, user.id);

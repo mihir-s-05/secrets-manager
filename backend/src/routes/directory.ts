@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { sendError } from '../utils/errors';
+import { sendError } from '../utils/errors.js';
 
 const directoryRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get(

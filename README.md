@@ -1,19 +1,16 @@
-# Secrets Manager Monorepo
+# Secrets Manager
 
-Full-stack secrets manager consisting of a Fastify/Prisma backend and an Ink-based CLI. The system supports GitHub OAuth device flow, short-lived JWT access tokens, refresh tokens persisted locally, and per-secret ACLs that combine org/user/team principals with read/write splits.
+Fastify/Prisma backend + Ink CLI. Supports GitHub Device Flow auth, short‑lived JWT access tokens with refresh, org‑scoped directory and admin APIs, and per‑secret ACLs for org/user/team with read/write splits.
 
 ## Project layout
 
 ```
 .
 ├── backend/        # Fastify API + Prisma ORM
-├── cli/            # Ink CLI front-end
-├── prisma/         # SQLite databases generated at runtime (per tests)
+├── my-ink-cli/     # Ink CLI front-end
 ├── full_plan.md    # Original implementation requirements
 └── project.md      # High-level goals
 ```
-
-Both packages are published as Node workspaces and share the root `package-lock.json`. Commands below assume `npm`, but `pnpm` works with the equivalent `--filter` flags.
 
 ## Prerequisites
 
@@ -45,7 +42,7 @@ Both packages are published as Node workspaces and share the root `package-lock.
    | `ACCESS_TOKEN_TTL_MIN` | `15` | Access token lifetime in minutes. |
    | `REFRESH_TOKEN_TTL_DAYS` | `30` | Refresh token lifetime in days. |
    | `ADMIN_IMPLICIT_ACCESS` | `true` | If `true`, admins automatically gain read/write on every secret. |
-   | `ADMIN_EMAIL` | `admin@example.com` | Email assigned to the seeded admin user. |
+   | `ADMIN_EMAILS` | _(empty)_ | Comma‑separated emails that should be admins on login. |
    | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | _(empty)_ | Device flow credentials. |
 
 3. Register a GitHub OAuth App:
@@ -77,30 +74,41 @@ Both packages are published as Node workspaces and share the root `package-lock.
    - `/admin/*` → User & team management (admin token + org scoping)
    - `/secrets/*` → Secret CRUD, ACL management, and history
 
-## CLI setup
+## CLI (Ink app) setup
 
-1. Build the CLI once:
+1. Install and build the CLI once:
 
     ```bash
+    cd my-ink-cli
+    npm install
     npm run build
     ```
 
-   The bundled binary lives at `cli/dist/index.mjs`.
+   The bundled binary lives at `my-ink-cli/dist/index.js`.
 
 2. (Optional) Link for a global `secrets` command:
 
     ```bash
-    npm run link
-    # now `secrets --help` is available
+    npm link
+    # now `my-ink-cli` binary name (package bin) is available globally as `my-ink-cli`
     ```
 
-   Without linking, invoke it directly:
+   Without linking, invoke it directly from the project:
 
     ```bash
-    node cli/dist/index.mjs --help
+    node my-ink-cli/dist/index.js --help
     ```
 
-3. Run `secrets --help` to confirm the command list:
+3. Run the CLI with dev hot‑reload while iterating:
+
+    ```bash
+    cd my-ink-cli
+    npm run dev
+    ```
+
+4. At any time, show help inside the app with `?`.
+
+## Device flow login walkthrough
 
     ```
     secrets login            Authenticate with the device flow
@@ -137,32 +145,54 @@ Both packages are published as Node workspaces and share the root `package-lock.
 
 > On Linux without a secrets daemon you'll see `org.freedesktop.secrets was not provided ...`; that's the CLI falling back to the file store. No action is required unless you want gnome-keyring/kwallet integration.
 
-### Using secrets & ACLs
+## Using the app
 
-- **List**: `secrets ls` shows only items you can read. `myPermissions` indicates `R`, `W`, or `RW`.
-- **View**: `secrets get <key>` displays the current value plus metadata.
-- **Create/update**: `secrets set <key>` launches the editor UI to modify the value and toggle org/team/user ACL lines. At least one writer is required; admins can implicitly write if `ADMIN_IMPLICIT_ACCESS=true`.
-- **Share**: Use the `sharing` tab to grant read/write to org, specific users, or teams (lookups backed by `/org/users` & `/org/teams`).
-- **Audit**: `GET /secrets/:id/history` (exposed via the API) lists past versions; the CLI surfaces history in the editor after an update.
+1) Start services
 
-### Admin flows
+- Terminal A: `cd backend && npm run dev`
+- Terminal B: `cd my-ink-cli && npm run dev` (or `npm run build && npm start`)
 
-- `secrets admin team add <name>` → `POST /admin/teams`
-- `secrets admin team add-user <teamId> <userId>` → `POST /admin/teams/:id/members`
-- `secrets admin team rm-user <teamId> <userId>` → `DELETE /admin/teams/:id/members/:userId`
-- `secrets admin user add <email>` [flags] → `POST /admin/users` (display name defaults to the email prefix)
-- `secrets admin user promote <userId>` → `PATCH /admin/users/:id` with `isAdmin: true`
+2) Log in
 
-All admin commands require an access token with `isAdmin=true`. The backend enforces org scoping for every operation and rejects cross-org access with `404`.
+- The UI shows a login screen. Press `o` to open the verification URL, approve in the browser, and wait for the CLI to complete device flow. `c` shows the code again, `r` restarts.
 
-### CLI persistence
+3) Manage secrets
 
-State (API base URL, cached directories, toasts) lives in `~/.secretsmgr/config.json`. Access & refresh tokens + device id are loaded from keytar or the fallback file on startup. `secrets logout` will:
+- From Home, open Secrets. Use j/k or arrows to navigate.
+- Press Enter to view, or choose Create/Edit to modify a secret.
+- In the editor:
+  - Sections: `Ctrl+↑/↓` or `Tab/Shift+Tab` cycle Key → Value → ACL.
+  - ACLs: `a` add (org/team/user), `d` delete, `←/→` switch Read/Write, `Space` toggles.
+  - Save with `Ctrl+S`.
+  - The value field is capped to avoid layout jumps; long values show an overflow indicator.
 
-1. Call `POST /auth/logout` with the stored refresh token.
-2. Delete the keytar entry or session file.
+4) Directory (Users/Teams)
 
-## How it works
+- `←/→` switches between Teams and Users.
+- On Teams: `Tab` toggles focus between Teams and Members lists; `a` add member, `x` remove member (admin only).
+- On Users: the right pane shows details for the highlighted user (name, email, role, teams).
+
+5) Settings
+
+- Edit the server URL and `Ctrl+S` to save.
+- `r` reloads your profile from `/me` (useful after changing admin status).
+- `l` logs out (revokes refresh token). `x` resets local app state.
+
+## Admin in the UI
+
+- Admin capabilities are available when your footer shows `(admin)`.
+- Teams: create teams, add/remove members from the Teams tab.
+- Users: invite users and toggle admin via the Directory/Users tab (where implemented).
+- All actions are scoped to your org; cross‑org operations are rejected by the API.
+
+## Session & persistence
+
+State (API base URL, tokens, user) lives in the app’s config store. Access & refresh tokens + device id are persisted and auto‑refreshed. From Settings:
+
+1. Press `l` to logout (server revokes the refresh token).
+2. Press `x` to reset local app state.
+
+## How it works (high level)
 
 ### Backend highlights
 
@@ -176,7 +206,7 @@ State (API base URL, cached directories, toasts) lives in `~/.secretsmgr/config.
   1. Reject users outside the secret's org.
   2. Grant implicit admin access if enabled.
   3. Union org, user, and team ACL entries; `resolvePermissions` returns `read`/`write` booleans.
-- **Secrets API** maps ACL rows to friendly structures (`myPermissions` in list/detail responses) and accepts array-based ACL payloads.
+- **Secrets API** accepts ACL payloads with a discriminated union on `principal` and returns list/detail responses including `myPermissions`.
 - **Admin && directory routes** are always scoped to the caller's org.
 - **Testing** via Vitest + Supertest:
   - Each suite provisions an isolated SQLite database (`file:./prisma/<name>.test.db`) via `prisma db push --force-reset --skip-generate`.
@@ -184,35 +214,31 @@ State (API base URL, cached directories, toasts) lives in `~/.secretsmgr/config.
 
 ### CLI highlights
 
-- Built with Ink 6 + React 19, bundling through tsup.
-- `services/api.ts` initialises an Axios client with request/response interceptors. On `401` it automatically calls `/auth/refresh` using the persisted refresh token, updates local state, and retries the request.
-- `services/resources.ts` translates backend payloads (`myPermissions`, ACL rows, admin responses) into the CLI-friendly schemas.
-- `services/auth.ts` handles device flow loop, session persistence (keytar/fallback), and logout.
-- `services/store.ts` stores session state, directory caches, toast notifications, and screen reader flag via Zustand.
-- UI components like `BoxedPanel`, `Toasts`, `Spinner`, and tables wrap Ink primitives for consistent layout.
+- Built with Ink 5 + React 18 (Node 20). Dev via `tsx watch`.
+- `src/api/client.ts` handles requests and auto‑refreshes access tokens on 401s.
+- `src/types/dto.ts` defines Zod schemas used across screens and API wrappers.
+- `src/state/session.ts` persists server URL, device id, tokens, and user in `conf`.
+- UI uses small components (`List`, `MultiLineInput`, `Spinner`, `KeyLegend`) atop Ink primitives.
 
 ## Development scripts
 
 ```bash
-# backend
-npm run --workspace backend dev          # start API with tsx watch
-npm run --workspace backend build        # compile to dist/
-npm run --workspace backend start        # run compiled output
-npm run --workspace backend lint         # lint (requires eslint config)
-npm run --workspace backend test         # Vitest integration suite
+cd backend && npm run dev                # start API with tsx watch
+cd backend && npm run build              # compile to dist/
+cd backend && npm run start              # run compiled output
+cd backend && npm run test               # Vitest integration suite
 
-# CLI
-npm run --workspace cli dev              # hot reload Ink app (tsx watch)
-npm run --workspace cli build            # bundle to dist/
-npm run --workspace cli test             # Vitest UI/service tests
-npm run --workspace cli link             # npm link the secrets binary
+cd my-ink-cli && npm run dev             # hot reload Ink app (tsx watch)
+cd my-ink-cli && npm run build           # bundle to dist/
+cd my-ink-cli && npm run start           # run compiled output
+cd my-ink-cli && npm run test            # Vitest UI/service tests
 ```
 
 ## Running the full stack
 
-1. In one terminal: `npm run --workspace backend dev`.
-2. In another terminal: `npm run --workspace cli build && secrets login` (link first for convenience).
-3. Once logged in, explore secrets and admin commands.
+1. Terminal A: `cd backend && npm run dev`.
+2. Terminal B: `cd my-ink-cli && npm run dev` (or `npm run build && npm start`).
+3. Log in, then explore secrets and directory/admin screens from the Ink UI.
 
 Use the `--api` flag if the CLI runs from the repo root while the backend is elsewhere (e.g., staging).
 
@@ -221,13 +247,13 @@ Use the `--api` flag if the CLI runs from the repo root while the backend is els
 Backend:
 
 ```bash
-npm run --workspace backend test
+cd backend && npm run test
 ```
 
 CLI:
 
 ```bash
-npm run --workspace cli test
+cd my-ink-cli && npm run test
 ```
 
 > If Vitest prints a Prisma "Schema engine error" when targeting `file:/absolute/path`, check that the process can create the directory and that no stale WAL files are locked. Running the same `prisma db push --force-reset --skip-generate` manually with the failing `DATABASE_URL` helps confirm access.
@@ -239,6 +265,58 @@ npm run --workspace cli test
 - **JWT errors / 401s**: Confirm `JWT_SECRET` matches for builds; resetting the CLI session by deleting `~/.secretsmgr` can resolve mismatched tokens.
 - **Prisma engine errors**: Verify you are using Node 20+, that the repo path contains no spaces requiring quoting on Linux, and that the process owns the target directory for SQLite databases.
 
+### Admin role not applied after login
+
+- Set `ADMIN_EMAILS` in `backend/.env` to a comma‑separated list of emails. The check is case‑insensitive and uses your primary verified GitHub email.
+- Restart the backend so new env vars load.
+- In the CLI, either logout/login or go to Settings and press `r` to reload your profile from `/me`.
+- Confirm the footer shows `(admin)` after your `name@org` and that admin screens/actions are available. If not:
+  - Hit `GET /me` and verify `isAdmin: true`.
+  - Ensure your GitHub OAuth app has `user:email` scope enabled (we request `read:user user:email`).
+  - Double‑check the exact email string in `ADMIN_EMAILS` matches the primary email GitHub returns.
+
+### ACL save errors
+
+- The backend expects ACL items with `principal: 'org'|'user'|'team'`.
+- For `org`, omit `principalId` (server normalizes to `null`).
+- The CLI maps its internal ACL entries to this shape automatically; upgrade/rebuild if you see a discriminator error.
+
+## Keybindings and workflows (Ink UI)
+
+### Global
+
+- `?` Show/hide help
+- `g` Command palette (jump to screens)
+- `Tab` / `Shift+Tab` Move focus
+- `Esc` Back/close overlays
+- `q` / `Ctrl+C` Quit
+
+Footer shows: `name@org (admin|member)  •  serverUrl  •  route • ? help`
+
+### Login
+
+- The login screen opens GitHub’s Device Flow. Use `o` to open the URL, `c` to print the code again, `r` to restart.
+
+### Directory
+
+- Tabs: `←/→` switch between Teams and Users.
+- Focus: `Tab` toggles between Teams and Members lists on the Teams tab; Users tab focuses the list.
+- Navigation: `j/k` or arrow keys move within the active list.
+- Actions (admin): `r` refresh, `t` create team, `u` create user, `a` add member (on Teams tab), `x` remove member.
+- The Users tab shows a details pane for the highlighted user (name, email, role, teams).
+
+### Secrets editor
+
+- Sections: `Ctrl+↑/↓` or `Tab/Shift+Tab` cycle sections (Key, Value, ACL).
+- ACLs: `a` add, `d` delete, `Space` toggle permission on the highlighted row, `←/→` switch Read/Write column.
+- Save: `Ctrl+S`.
+- The value field is height‑capped to avoid layout jump while typing; an overflow indicator appears for long values.
+
+### Settings
+
+- Edit server URL, `Ctrl+S` to save.
+- `l` logout (revokes refresh token), `x` reset app state, `r` reload profile from `/me` (useful after changing admin status server‑side).
+
 ## Security notes
 
 - Secrets are stored as plaintext in SQLite for this exercise (per the project spec). If you need at-rest encryption, introduce AES-GCM with an org-specific key and wrap it with a server key.
@@ -247,17 +325,16 @@ npm run --workspace cli test
 
 ---
 
-With the backend running and the CLI linked, the shortest demo is:
+With the backend running and the CLI built, a quick demo is:
 
 ```bash
-secrets login
-secrets ls
-secrets set DEMO_KEY
-secrets get DEMO_KEY
-secrets admin user add teammate@example.com --name "Teammate"
-secrets admin team add platform
-secrets admin team add-user <teamId> <userId>
-secrets logout
+cd backend && npm run dev
+cd my-ink-cli && npm run dev   # or: npm run build && npm start
+# In the Ink UI:
+# 1) Login via GitHub
+# 2) Create a secret and add ACLs
+# 3) Browse Directory; add/remove team members (if admin)
+# 4) Settings → r to reload profile
 ```
 
 That covers the end-to-end device login, secret management, ACL enforcement, and admin provisioning workflows implemented in this repository.

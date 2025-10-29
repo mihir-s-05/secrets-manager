@@ -46,6 +46,7 @@ const Directory: React.FC<DirectoryProps> = ({defaultTab = 'teams'}) => {
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [focusArea, setFocusArea] = useState<FocusArea>(defaultTab === 'teams' ? 'teams' : 'users');
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
   const isAdmin = session.user?.isAdmin ?? false;
 
@@ -85,6 +86,13 @@ const Directory: React.FC<DirectoryProps> = ({defaultTab = 'teams'}) => {
     const members = teams.find((team) => team.id === selectedTeamId)?.members ?? [];
     setSelectedMemberId(members[0]?.id ?? null);
   }, [selectedTeamId, teams]);
+
+  useEffect(() => {
+    // Default to first user when list loads
+    if (users.length > 0 && !selectedUserId) {
+      setSelectedUserId(users[0].id);
+    }
+  }, [users, selectedUserId]);
 
   useInput((input: string, key: Key) => {
     if (modal) {
@@ -271,22 +279,52 @@ const Directory: React.FC<DirectoryProps> = ({defaultTab = 'teams'}) => {
           </Box>
         </Box>
       ) : (
-        <Box flexDirection="column">
-          <Text color="gray">Users</Text>
-          <List
-            isActive={focusArea === 'users'}
-            items={users}
-            itemKey={(user) => user.id}
-            renderItem={({item, isHighlighted}) => (
-              <Box flexDirection="column">
-                <Text color={isHighlighted ? 'cyan' : undefined}>
-                  {item.displayName ?? item.email}
-                </Text>
-                <Text color="gray">{item.email}</Text>
-              </Box>
-            )}
-            emptyMessage="No users found"
-          />
+        <Box flexDirection="row" gap={2}>
+          <Box flexDirection="column" width="50%">
+            <Text color="gray">Users</Text>
+            <List
+              isActive={focusArea === 'users'}
+              items={users}
+              itemKey={(user) => user.id}
+              onHighlight={(user) => setSelectedUserId(user.id)}
+              renderItem={({item, isHighlighted}) => (
+                <Box flexDirection="column">
+                  <Text color={isHighlighted ? 'cyan' : undefined}>
+                    {item.displayName ?? item.email}
+                  </Text>
+                  <Text color="gray">{item.email}</Text>
+                </Box>
+              )}
+              emptyMessage="No users found"
+            />
+          </Box>
+
+          <Box flexDirection="column" width="50%">
+            <Text color="gray">User details</Text>
+            {(() => {
+              const user = users.find((u) => u.id === selectedUserId) ?? null;
+              if (!user) {
+                return <Text color="gray">Select a user to view details.</Text>;
+              }
+              return (
+                <Box flexDirection="column">
+                  <Text>Name: {user.displayName ?? user.email}</Text>
+                  <Text>Email: {user.email}</Text>
+                  <Text>Role: {user.isAdmin ? 'Admin' : 'Member'}</Text>
+                  {user.teams && user.teams.length > 0 ? (
+                    <>
+                      <Text color="gray">Teams:</Text>
+                      {user.teams.map((t) => (
+                        <Text key={t.id}>- {t.name}</Text>
+                      ))}
+                    </>
+                  ) : (
+                    <Text color="gray">No teams</Text>
+                  )}
+                </Box>
+              );
+            })()}
+          </Box>
         </Box>
       )}
 
