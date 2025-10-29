@@ -69,6 +69,7 @@ export const secretHistoryItemSchema = z.object({
 export const deviceStartResponseSchema = z.object({
   deviceCode: z.string(),
   verificationUri: z.string().url(),
+  verificationUriComplete: z.string().url().optional(),
   userCode: z.string(),
   pollIntervalSec: z.number().int().positive(),
   expiresIn: z.number().int().positive()

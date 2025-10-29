@@ -87,9 +87,15 @@ export const pollDeviceFlow = async (
   }
 };
 
+import {sessionStore} from '../state/session.js';
+
 export const logout = async (client: ApiClient): Promise<void> => {
+  const {refreshToken} = sessionStore.getSnapshot();
+  // If we don't have a refresh token locally, skip server call
+  if (!refreshToken) return;
   await client.request('/auth/logout', {
     method: 'POST',
+    body: {refreshToken},
     allowedStatuses: [204]
   });
 };

@@ -115,7 +115,8 @@ const Login: React.FC = () => {
     }
 
     if (input === 'o' && flow) {
-      openInBrowser(flow.verificationUri).catch((error) => {
+      const url = flow.verificationUriComplete ?? flow.verificationUri;
+      openInBrowser(url).catch((error) => {
         notify(`Unable to open browser: ${(error as Error).message}`, 'error');
       });
       return;
@@ -159,7 +160,9 @@ const Login: React.FC = () => {
       {flow ? (
         <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} paddingY={1} width={60}>
           <Text>1. Visit:</Text>
-          <InkLink url={flow.verificationUri}>{flow.verificationUri}</InkLink>
+          <InkLink url={flow.verificationUriComplete ?? flow.verificationUri}>
+            {flow.verificationUriComplete ?? flow.verificationUri}
+          </InkLink>
           <Box marginTop={1}>
             <Text>2. Enter this code:</Text>
           </Box>
