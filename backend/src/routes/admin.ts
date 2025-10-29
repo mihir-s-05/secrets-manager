@@ -89,6 +89,15 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
         return sendError(reply, 404, 'not_found', 'User not found in your organization');
       }
 
+      if (reassignOrgId && reassignOrgId !== request.user.orgId) {
+        return sendError(
+          reply,
+          403,
+          'forbidden',
+          'Cannot reassign users outside of your organization'
+        );
+      }
+
       if (reassignOrgId) {
         const orgExists = await fastify.prisma.organization.findUnique({
           where: { id: reassignOrgId }
@@ -320,4 +329,3 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
 };
 
 export default adminRoutes;
-

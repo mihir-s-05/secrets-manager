@@ -22,6 +22,7 @@ type DeviceSession = {
   issuedAt: number;
   expiresAt: number;
   pollInterval: number;
+  boundDeviceId?: string;
 };
 
 type RateLimitBucket = {
@@ -35,6 +36,14 @@ const pollLimiter = new Map<string, RateLimitBucket>();
 const POLL_LIMIT = 5;
 const POLL_WINDOW_MS = 10_000;
 
+function pruneRateLimiter(now: number) {
+  for (const [key, bucket] of pollLimiter) {
+    if (now - bucket.windowStart > POLL_WINDOW_MS * 3) {
+      pollLimiter.delete(key);
+    }
+  }
+}
+
 function computeRetryAfterSeconds(session: DeviceSession) {
   return Math.max(1, Math.ceil(session.pollInterval));
 }
@@ -46,6 +55,7 @@ function pruneExpiredSessions() {
       deviceSessions.delete(key);
     }
   }
+  pruneRateLimiter(now);
 }
 
 function checkRateLimit(key: string) {
@@ -62,6 +72,7 @@ function checkRateLimit(key: string) {
   }
 
   bucket.count += 1;
+  pollLimiter.set(key, bucket);
   return { allowed: true };
 }
 
@@ -74,9 +85,32 @@ const authStartResponseSchema = z.object({
   expiresIn: z.number().int().positive()
 });
 
+function bindSessionToDevice(session: DeviceSession, deviceId: string) {
+  if (!session.boundDeviceId) {
+    session.boundDeviceId = deviceId;
+    deviceSessions.set(session.deviceCode, session);
+    return true;
+  }
+
+  return session.boundDeviceId === deviceId;
+}
+
 const authRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/auth/start', async (request, reply) => {
     pruneExpiredSessions();
+
+    const bodyResult = z
+      .object({
+        deviceId: z.string().trim().min(1).optional()
+      })
+      .partial()
+      .safeParse(request.body ?? {});
+
+    if (!bodyResult.success) {
+      return sendZodError(reply, bodyResult.error);
+    }
+
+    const requestedDeviceId = bodyResult.data.deviceId;
 
     if (!env.GITHUB_CLIENT_ID) {
       request.log.error('GITHUB_CLIENT_ID is not configured');
@@ -96,7 +130,8 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
         verificationUri: device.verificationUri,
         issuedAt: Date.now(),
         expiresAt: Date.now() + device.expiresIn * 1000,
-        pollInterval: device.interval
+        pollInterval: device.interval,
+        boundDeviceId: requestedDeviceId
       };
 
       deviceSessions.set(device.deviceCode, session);
@@ -176,6 +211,15 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       );
     }
 
+    if (!bindSessionToDevice(session, deviceId)) {
+      return sendError(
+        reply,
+        401,
+        'unauthorized',
+        'Device identifier does not match this authorization session'
+      );
+    }
+
     try {
       const result = await exchangeDeviceCodeForToken({
         clientId: env.GITHUB_CLIENT_ID,
@@ -187,6 +231,7 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
         if (result.interval) {
           session.pollInterval = Math.max(session.pollInterval, result.interval);
         }
+        deviceSessions.set(deviceCode, session);
         const retryAfter = computeRetryAfterSeconds(session);
         reply.header('Retry-After', retryAfter);
         return sendError(reply, 428, 'authorization_pending', 'Authorization is pending');

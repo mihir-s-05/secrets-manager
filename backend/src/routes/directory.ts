@@ -15,12 +15,20 @@ const directoryRoutes: FastifyPluginAsync = async (fastify) => {
         select: {
           id: true,
           displayName: true,
-          email: true
+          email: true,
+          isAdmin: true
         },
         orderBy: { displayName: 'asc' }
       });
 
-      return reply.status(200).send(users);
+      return reply.status(200).send(
+        users.map((user) => ({
+          id: user.id,
+          displayName: user.displayName,
+          email: user.email,
+          isAdmin: user.isAdmin
+        }))
+      );
     }
   );
 
@@ -36,12 +44,23 @@ const directoryRoutes: FastifyPluginAsync = async (fastify) => {
         where: { orgId: request.user.orgId },
         select: {
           id: true,
-          name: true
+          name: true,
+          _count: {
+            select: {
+              members: true
+            }
+          }
         },
         orderBy: { name: 'asc' }
       });
 
-      return reply.status(200).send(teams);
+      return reply.status(200).send(
+        teams.map((team) => ({
+          id: team.id,
+          name: team.name,
+          memberCount: team._count.members
+        }))
+      );
     }
   );
 };

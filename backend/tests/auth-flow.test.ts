@@ -385,6 +385,40 @@ describe('auth endpoints', () => {
     });
   });
 
+  test('POST /auth/poll rejects mismatched device identifiers', async () => {
+    const mock = setupDeviceAuthorizationMocks();
+
+    const startResponse = await request(address).post('/auth/start').send({ deviceId: 'device-primary' });
+    expect(startResponse.status).toBe(200);
+    expect(startResponse.body.deviceCode).toBe(mock.deviceCode);
+
+    const firstPoll = await request(address)
+      .post('/auth/poll')
+      .send({ deviceCode: mock.deviceCode, deviceId: 'device-primary' });
+    expect(firstPoll.status).toBe(428);
+    expect(firstPoll.body).toMatchObject({ error: { code: 'authorization_pending' } });
+
+    const mismatchPoll = await request(address)
+      .post('/auth/poll')
+      .send({ deviceCode: mock.deviceCode, deviceId: 'device-secondary' });
+    expect(mismatchPoll.status).toBe(401);
+    expect(mismatchPoll.body).toMatchObject({
+      error: {
+        code: 'unauthorized',
+        message: 'Device identifier does not match this authorization session'
+      }
+    });
+
+    const success = await request(address)
+      .post('/auth/poll')
+      .send({ deviceCode: mock.deviceCode, deviceId: 'device-primary' });
+    expect(success.status).toBe(200);
+    expect(success.body).toMatchObject({
+      accessToken: expect.any(String),
+      refreshToken: expect.any(String)
+    });
+  });
+
   test('POST /auth/refresh rejects invalid tokens and issues new access token', async () => {
     const mock = await completeDeviceFlow('device-refresh');
 
