@@ -220,12 +220,18 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       try {
-        await fastify.prisma.teamMember.create({
+        const membership = await fastify.prisma.teamMember.create({
           data: {
             teamId,
             userId
+          },
+          select: {
+            teamId: true,
+            userId: true
           }
         });
+
+        return reply.status(201).send(membership);
       } catch (error) {
         const message = error instanceof Error ? error.message.toLowerCase() : '';
         if (message.includes('unique') || message.includes('constraint')) {
@@ -234,8 +240,6 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
         request.log.error({ err: error }, 'Failed to add team member');
         return sendError(reply, 500, 'server_error', 'Failed to add team member');
       }
-
-      return reply.status(204).send();
     }
   );
 

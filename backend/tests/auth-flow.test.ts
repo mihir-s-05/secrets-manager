@@ -572,7 +572,8 @@ describe('admin routes', () => {
       .post(`/admin/teams/${teamId}/members`)
       .set('Authorization', `Bearer ${flow.accessToken}`)
       .send({ userId: newUserId });
-    expect(addMember.status).toBe(204);
+    expect(addMember.status).toBe(201);
+    expect(addMember.body).toMatchObject({ teamId, userId: newUserId });
 
     const removeMember = await request(address)
       .delete(`/admin/teams/${teamId}/members/${newUserId}`)

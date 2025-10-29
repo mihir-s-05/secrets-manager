@@ -9,6 +9,9 @@ import authRoutes from './routes/auth';
 import meRoutes from './routes/me';
 import directoryRoutes from './routes/directory';
 import adminRoutes from './routes/admin';
+import secretsRoutes from './routes/secrets';
+import { HttpError, mapPrismaError, sendError, sendZodError } from './utils/errors';
+import { ZodError } from 'zod';
 import { registerPrisma } from './plugins/prisma';
 import { registerAuthDecorators } from './plugins/auth';
 
@@ -44,11 +47,36 @@ export function createServer(): FastifyInstance {
   app.register(sensible);
   registerPrisma(app);
   registerAuthDecorators(app);
+  app.setErrorHandler((error, request, reply) => {
+    if (reply.sent) {
+      return;
+    }
+
+    if (error instanceof HttpError) {
+      sendError(reply, error.statusCode, error.code, error.message);
+      return;
+    }
+
+    if (error instanceof ZodError) {
+      sendZodError(reply, error);
+      return;
+    }
+
+    const prismaError = mapPrismaError(error);
+    if (prismaError) {
+      sendError(reply, prismaError.statusCode, prismaError.code, prismaError.message);
+      return;
+    }
+
+    request.log.error({ err: error }, 'Unhandled error');
+    sendError(reply, 500, 'server_error', 'Internal server error');
+  });
 
   app.register(authRoutes);
   app.register(meRoutes);
   app.register(directoryRoutes);
   app.register(adminRoutes);
+  app.register(secretsRoutes);
 
   app.get('/health', async () => {
     return { ok: true, version: pkg.version };
