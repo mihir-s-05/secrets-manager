@@ -31,6 +31,7 @@ export type DeviceCodeResponse = {
   deviceCode: string;
   userCode: string;
   verificationUri: string;
+  verificationUriComplete?: string;
   expiresIn: number;
   interval: number;
 };
@@ -51,20 +52,25 @@ export async function requestDeviceCode(clientId: string): Promise<DeviceCodeRes
     device_code: string;
     user_code: string;
     verification_uri: string;
+    verification_uri_complete?: string;
     expires_in: number;
     interval: number;
   }>(DEVICE_CODE_URL, {
     method: 'POST',
-    body: JSON.stringify({
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
       client_id: clientId,
       scope: 'read:user user:email'
-    })
+    }) as unknown as BodyInit
   });
 
   return {
     deviceCode: data.device_code,
     userCode: data.user_code,
     verificationUri: data.verification_uri,
+    verificationUriComplete:
+      data.verification_uri_complete ??
+      `${data.verification_uri}?user_code=${encodeURIComponent(data.user_code)}`,
     expiresIn: data.expires_in,
     interval: data.interval
   };
@@ -82,12 +88,13 @@ export async function exchangeDeviceCodeForToken(params: {
     interval?: number;
   }>(ACCESS_TOKEN_URL, {
     method: 'POST',
-    body: JSON.stringify({
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
       client_id: params.clientId,
       client_secret: params.clientSecret,
       device_code: params.deviceCode,
       grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
-    })
+    }) as unknown as BodyInit
   });
 
   if (data.error === 'authorization_pending') {

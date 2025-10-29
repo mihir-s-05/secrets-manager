@@ -68,6 +68,7 @@ function checkRateLimit(key: string) {
 const authStartResponseSchema = z.object({
   deviceCode: z.string(),
   verificationUri: z.string().url(),
+  verificationUriComplete: z.string().url().optional(),
   userCode: z.string(),
   pollIntervalSec: z.number().int().positive(),
   expiresIn: z.number().int().positive()
@@ -103,6 +104,7 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       const response = authStartResponseSchema.parse({
         deviceCode: device.deviceCode,
         verificationUri: device.verificationUri,
+        verificationUriComplete: device.verificationUriComplete,
         userCode: device.userCode,
         pollIntervalSec: device.interval,
         expiresIn: device.expiresIn
@@ -110,6 +112,23 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
 
       return reply.status(200).send(response);
     } catch (error) {
+      const message =
+        error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+
+      // Surface a helpful error when GitHub Device Flow is not enabled for the OAuth App
+      if (message.includes('device_flow_disabled')) {
+        request.log.warn(
+          { err: error },
+          'GitHub Device Flow is disabled for the configured OAuth App. Enable it in GitHub → Settings → Developer settings → OAuth Apps → your app → Enable Device Flow.'
+        );
+        return sendError(
+          reply,
+          400,
+          'device_flow_disabled',
+          'GitHub Device Flow is disabled for your OAuth App. Enable it in GitHub settings and try again.'
+        );
+      }
+
       request.log.error({ err: error }, 'Failed to request GitHub device code');
       return sendError(reply, 500, 'server_error', 'Failed to start device authorization');
     }

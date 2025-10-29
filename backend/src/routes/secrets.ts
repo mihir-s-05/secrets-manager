@@ -54,6 +54,55 @@ function dedupeAcls(acls: NormalizedAcl[]): NormalizedAcl[] {
   return Array.from(merged.values());
 }
 
+async function loadSecretWithAcls(
+  fastify: Parameters<FastifyPluginAsync>[0],
+  identifier: string,
+  orgId: string
+) {
+  const baseInclude = {
+    acls: {
+      select: {
+        principal: true,
+        principalId: true,
+        canRead: true,
+        canWrite: true
+      }
+    }
+  } as const;
+
+  const byId = await fastify.prisma.secret.findUnique({
+    where: { id: identifier },
+    include: baseInclude
+  });
+  if (byId && byId.orgId === orgId) {
+    return byId;
+  }
+
+  return fastify.prisma.secret.findFirst({
+    where: {
+      orgId,
+      key: identifier
+    },
+    include: baseInclude
+  });
+}
+
+function mapAclRecords(
+  records: Array<{
+    principal: string;
+    principalId: string | null;
+    canRead: boolean;
+    canWrite: boolean;
+  }>
+): NormalizedAcl[] {
+  return records.map((acl) => ({
+    principal: acl.principal as NormalizedAcl['principal'],
+    principalId: acl.principalId ?? null,
+    canRead: acl.canRead,
+    canWrite: acl.canWrite
+  }));
+}
+
 async function normalizeAndValidateAcls(
   fastify: Parameters<FastifyPluginAsync>[0],
   orgId: string,
@@ -237,33 +286,17 @@ const secretsRoutes: FastifyPluginAsync = async (fastify) => {
         return sendZodError(reply, parsedParams.error);
       }
 
-      const secret = await fastify.prisma.secret.findUnique({
-        where: { id: parsedParams.data.id },
-        include: {
-          acls: {
-            select: {
-              principal: true,
-              principalId: true,
-              canRead: true,
-              canWrite: true
-            }
-          }
-        }
-      });
+      const secret = await loadSecretWithAcls(fastify, parsedParams.data.id, request.user.orgId);
 
-      if (!secret || secret.orgId !== request.user.orgId) {
+      if (!secret) {
         return sendError(reply, 404, 'not_found', 'Secret not found');
       }
 
+      const currentAcls = mapAclRecords(secret.acls);
       const permissions = resolvePermissions(
         request.user,
         { orgId: secret.orgId },
-        secret.acls.map((acl) => ({
-          principal: acl.principal as NormalizedAcl['principal'],
-          principalId: acl.principalId ?? null,
-          canRead: acl.canRead,
-          canWrite: acl.canWrite
-        })),
+        currentAcls,
         env.ADMIN_IMPLICIT_ACCESS
       );
 
@@ -277,6 +310,7 @@ const secretsRoutes: FastifyPluginAsync = async (fastify) => {
         value: secret.value,
         version: secret.version,
         updatedAt: secret.updatedAt,
+        myPermissions: permissions,
         acls: secret.acls.map((acl) => ({
           principal: acl.principal,
           principalId: acl.principalId ?? null,
@@ -397,33 +431,17 @@ const secretsRoutes: FastifyPluginAsync = async (fastify) => {
         return sendZodError(reply, parsedBody.error);
       }
 
-      const secret = await fastify.prisma.secret.findUnique({
-        where: { id: parsedParams.data.id },
-        include: {
-          acls: {
-            select: {
-              principal: true,
-              principalId: true,
-              canRead: true,
-              canWrite: true
-            }
-          }
-        }
-      });
+      const secret = await loadSecretWithAcls(fastify, parsedParams.data.id, request.user.orgId);
 
-      if (!secret || secret.orgId !== request.user.orgId) {
+      if (!secret) {
         return sendError(reply, 404, 'not_found', 'Secret not found');
       }
 
+      const currentAcls = mapAclRecords(secret.acls);
       const permissions = resolvePermissions(
         request.user,
         { orgId: secret.orgId },
-        secret.acls.map((acl) => ({
-          principal: acl.principal as NormalizedAcl['principal'],
-          principalId: acl.principalId ?? null,
-          canRead: acl.canRead,
-          canWrite: acl.canWrite
-        })),
+        currentAcls,
         env.ADMIN_IMPLICIT_ACCESS
       );
 
@@ -544,33 +562,17 @@ const secretsRoutes: FastifyPluginAsync = async (fastify) => {
         return sendZodError(reply, parsedParams.error);
       }
 
-      const secret = await fastify.prisma.secret.findUnique({
-        where: { id: parsedParams.data.id },
-        include: {
-          acls: {
-            select: {
-              principal: true,
-              principalId: true,
-              canRead: true,
-              canWrite: true
-            }
-          }
-        }
-      });
+      const secret = await loadSecretWithAcls(fastify, parsedParams.data.id, request.user.orgId);
 
-      if (!secret || secret.orgId !== request.user.orgId) {
+      if (!secret) {
         return sendError(reply, 404, 'not_found', 'Secret not found');
       }
 
+      const normalizedAcls = mapAclRecords(secret.acls);
       const permissions = resolvePermissions(
         request.user,
         { orgId: secret.orgId },
-        secret.acls.map((acl) => ({
-          principal: acl.principal as NormalizedAcl['principal'],
-          principalId: acl.principalId ?? null,
-          canRead: acl.canRead,
-          canWrite: acl.canWrite
-        })),
+        normalizedAcls,
         env.ADMIN_IMPLICIT_ACCESS
       );
 
