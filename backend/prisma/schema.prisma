@@ -1,0 +1,99 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// PrincipalType enum replaced with String for SQLite compatibility
+// Valid values: "user", "team", "org"
+
+model Organization {
+  id      String  @id @default(cuid())
+  name    String  @unique
+  users   User[]
+  teams   Team[]
+  secrets Secret[]
+}
+
+model User {
+  id            String  @id @default(cuid())
+  orgId         String
+  org           Organization @relation(fields: [orgId], references: [id])
+  email         String  @unique
+  displayName   String
+  oauthProvider String
+  oauthSub      String
+  isAdmin       Boolean @default(false)
+  memberships   TeamMember[]
+  createdAt     DateTime @default(now())
+}
+
+model Team {
+  id      String @id @default(cuid())
+  orgId   String
+  org     Organization @relation(fields: [orgId], references: [id])
+  name    String
+  members TeamMember[]
+
+  @@unique([orgId, name])
+}
+
+model TeamMember {
+  teamId String
+  userId String
+  team   Team @relation(fields: [teamId], references: [id])
+  user   User @relation(fields: [userId], references: [id])
+
+  @@id([teamId, userId])
+}
+
+model Secret {
+  id        String @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  key       String
+  value     String
+  version   Int @default(1)
+  createdBy String
+  updatedBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  acls      SecretAcl[]
+
+  @@unique([orgId, key])
+}
+
+model SecretAcl {
+  id          String @id @default(cuid())
+  secretId    String
+  principal   String // "user", "team", or "org"
+  principalId String? // null for org-wide
+  canRead     Boolean @default(false)
+  canWrite    Boolean @default(false)
+  secret      Secret @relation(fields: [secretId], references: [id])
+
+  @@unique([secretId, principal, principalId])
+}
+
+model SecretHistory {
+  id        String @id @default(cuid())
+  secretId  String
+  version   Int
+  value     String
+  updatedBy String
+  updatedAt DateTime @default(now())
+
+  @@unique([secretId, version])
+}
+
+model RefreshToken {
+  id        String @id @default(cuid())
+  userId    String
+  deviceId  String
+  token     String @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+}
