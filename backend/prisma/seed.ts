@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { config as loadEnv } from 'dotenv';
+import { fileURLToPath } from 'node:url';
 
 loadEnv();
 
@@ -40,7 +41,9 @@ export async function seed(prisma?: PrismaClient): Promise<void> {
   }
 }
 
-if (require.main === module) {
+const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+
+if (isDirectRun) {
   seed().catch((error) => {
     console.error('Seeding failed:', error);
     process.exit(1);

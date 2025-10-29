@@ -2,6 +2,7 @@ import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
 import type { FastifyInstance } from 'fastify';
 import fastify from 'fastify';
+import { fileURLToPath } from 'node:url';
 import pkg from '../package.json';
 import { env } from './env';
 import authRoutes from './routes/auth';
@@ -88,6 +89,8 @@ async function start() {
   }
 }
 
-if (require.main === module) {
+const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+
+if (isDirectRun) {
   start();
 }
