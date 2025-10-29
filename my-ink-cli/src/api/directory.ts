@@ -187,3 +187,17 @@ export const setAdmin = async (
   const fallbackOrg = getFallbackOrg();
   return normalizeUser(parsed, fallbackOrg);
 };
+
+export const deleteTeam = async (client: ApiClient, teamId: string): Promise<void> => {
+  await client.request(`/admin/teams/${teamId}`, {
+    method: 'DELETE',
+    allowedStatuses: [204]
+  });
+};
+
+export const deleteUser = async (client: ApiClient, userId: string): Promise<void> => {
+  await client.request(`/admin/users/${userId}`, {
+    method: 'DELETE',
+    allowedStatuses: [204]
+  });
+};

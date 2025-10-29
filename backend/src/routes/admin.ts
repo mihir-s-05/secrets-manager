@@ -145,6 +145,10 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
         return sendError(reply, 404, 'not_found', 'User not found in your organization');
       }
 
+      // Remove related memberships before deleting user to satisfy FK constraints
+      await fastify.prisma.teamMember.deleteMany({
+        where: { userId: id }
+      });
       await fastify.prisma.user.delete({ where: { id } });
       return reply.status(204).send();
     }
@@ -229,18 +233,14 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       try {
-        const membership = await fastify.prisma.teamMember.create({
+        await fastify.prisma.teamMember.create({
           data: {
             teamId,
             userId
-          },
-          select: {
-            teamId: true,
-            userId: true
           }
         });
 
-        return reply.status(201).send(membership);
+        return reply.status(204).send();
       } catch (error) {
         const message = error instanceof Error ? error.message.toLowerCase() : '';
         if (message.includes('unique') || message.includes('constraint')) {

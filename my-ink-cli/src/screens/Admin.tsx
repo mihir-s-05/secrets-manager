@@ -79,6 +79,11 @@ const Admin: React.FC = () => {
     };
   }, [loadDirectory, router, setEditing, setEscapeHandler]);
 
+  // While a modal is open, treat the app as editing to suppress global shortcuts
+  useEffect(() => {
+    setEditing(!!modal);
+  }, [modal, setEditing]);
+
   const actions: AdminAction[] = useMemo(
     () => [
       {id: 'create-user', label: 'Create user', description: 'Invite a new user to the org'},

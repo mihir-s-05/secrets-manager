@@ -33,6 +33,16 @@ export const Keymap: React.FC<KeymapProps> = ({
       return;
     }
 
+    // When editing (e.g., typing in a TextInput or editor), suppress global single-key commands
+    if (isEditing) {
+      if (key.ctrl && input === 'c') {
+        onExitRequested();
+        return;
+      }
+      // Allow screens to handle their own shortcuts (e.g., save), but don't trigger global ones here
+      return;
+    }
+
     if (!key.ctrl && !key.meta) {
       if (input === '?') {
         onToggleHelp();
@@ -52,11 +62,6 @@ export const Keymap: React.FC<KeymapProps> = ({
 
     if (key.ctrl && input === 'c') {
       onExitRequested();
-      return;
-    }
-
-    if (isEditing && key.meta && input === 's') {
-      // Prevent default to avoid accidental exits when editing. The actual save handler lives in the screen.
       return;
     }
   });

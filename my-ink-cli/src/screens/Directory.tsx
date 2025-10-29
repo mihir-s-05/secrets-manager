@@ -15,7 +15,10 @@ import {
   createUser,
   fetchTeams,
   fetchUsers,
-  removeTeamMember
+  removeTeamMember,
+  deleteTeam,
+  deleteUser,
+  setAdmin
 } from '../api/directory.js';
 import type {Team, User} from '../types/dto.js';
 
@@ -29,6 +32,8 @@ type ModalState =
   | {kind: 'createTeam'}
   | {kind: 'createUser'}
   | {kind: 'addMember'; team: Team}
+  | {kind: 'teamConfig'; teamId: string}
+  | {kind: 'userConfig'; userId: string}
   | null;
 
 type FocusArea = 'teams' | 'members' | 'users';
@@ -80,6 +85,11 @@ const Directory: React.FC<DirectoryProps> = ({defaultTab = 'teams'}) => {
       setEscapeHandler(null);
     };
   }, [loadDirectory, router, setEditing, setEscapeHandler]);
+
+  // Suppress global shortcuts while any modal is open (text entry or selection)
+  useEffect(() => {
+    setEditing(!!modal);
+  }, [modal, setEditing]);
 
   useEffect(() => {
     // Reset member selection when team changes
@@ -140,21 +150,7 @@ const Directory: React.FC<DirectoryProps> = ({defaultTab = 'teams'}) => {
         setModal({kind: 'createUser'});
         return;
       }
-      const team = teams.find((entry) => entry.id === selectedTeamId);
-      if (!team) {
-        return;
-      }
-      if (input === 'a') {
-        setModal({kind: 'addMember', team});
-        return;
-      }
-      if (input === 'x') {
-        if (!selectedMemberId) {
-          notify('Select a member to remove.', 'info');
-          return;
-        }
-        void handleRemoveMember(team, selectedMemberId);
-      }
+      // Editing is handled via Enter → config modal
     } else if (tab === 'users' && input === 'u') {
       setModal({kind: 'createUser'});
     }
@@ -255,6 +251,7 @@ const Directory: React.FC<DirectoryProps> = ({defaultTab = 'teams'}) => {
               onHighlight={(team) => {
                 setSelectedTeamId(team.id);
               }}
+              onSubmit={(team) => setModal({kind: 'teamConfig', teamId: team.id})}
               renderItem={({item, isHighlighted}) => (
                 <Box flexDirection="column">
                   <Text color={isHighlighted ? 'cyan' : undefined}>{item.name}</Text>
@@ -287,6 +284,7 @@ const Directory: React.FC<DirectoryProps> = ({defaultTab = 'teams'}) => {
               items={users}
               itemKey={(user) => user.id}
               onHighlight={(user) => setSelectedUserId(user.id)}
+              onSubmit={(user) => setModal({kind: 'userConfig', userId: user.id})}
               renderItem={({item, isHighlighted}) => (
                 <Box flexDirection="column">
                   <Text color={isHighlighted ? 'cyan' : undefined}>
@@ -334,11 +332,11 @@ const Directory: React.FC<DirectoryProps> = ({defaultTab = 'teams'}) => {
         items={[
           {key: '←/→', description: 'Switch tabs'},
           {key: 'Tab', description: 'Switch list focus'},
+          {key: 'j/k', description: 'Move down/up'},
           {key: 'r', description: 'Refresh directory'},
+          {key: 'Enter', description: 'Configure selected item'},
           {key: 't', description: 'Create team (admin)'},
-          {key: 'u', description: 'Create user (admin)'},
-          {key: 'a', description: 'Add member (teams tab, admin)'},
-          {key: 'x', description: 'Remove member (teams tab, admin)'}
+          {key: 'u', description: 'Create user (admin)'}
         ]}
       />
 
@@ -349,7 +347,48 @@ const Directory: React.FC<DirectoryProps> = ({defaultTab = 'teams'}) => {
           onCreateTeam={handleCreateTeam}
           onCreateUser={handleCreateUser}
           onAddMember={handleAddMember}
+          onRemoveMember={handleRemoveMember}
+          onDeleteTeam={async (teamId) => {
+            setWorking(true);
+            try {
+              await deleteTeam(client, teamId);
+              notify('Team deleted', 'success');
+              await loadDirectory();
+            } catch (err) {
+              notify(`Failed to delete team: ${(err as Error).message}`, 'error');
+            } finally {
+              setWorking(false);
+              setModal(null);
+            }
+          }}
+          onToggleAdmin={async (userId, next) => {
+            setWorking(true);
+            try {
+              await setAdmin(client, userId, next);
+              notify(`User is now ${next ? 'an admin' : 'a member'}`, 'success');
+              await loadDirectory();
+            } catch (err) {
+              notify(`Failed to toggle admin: ${(err as Error).message}`, 'error');
+            } finally {
+              setWorking(false);
+              setModal(null);
+            }
+          }}
+          onDeleteUser={async (userId) => {
+            setWorking(true);
+            try {
+              await deleteUser(client, userId);
+              notify('User deleted', 'success');
+              await loadDirectory();
+            } catch (err) {
+              notify(`Failed to delete user: ${(err as Error).message}`, 'error');
+            } finally {
+              setWorking(false);
+              setModal(null);
+            }
+          }}
           users={users}
+          teams={teams}
         />
       ) : null}
     </Box>
@@ -362,10 +401,15 @@ interface DirectoryModalProps {
   onCreateTeam: (name: string) => void;
   onCreateUser: (name: string, email: string) => void;
   onAddMember: (team: Team, userId: string) => void;
+  onRemoveMember: (team: Team, userId: string) => void;
+  onDeleteTeam: (teamId: string) => void;
+  onToggleAdmin: (userId: string, next: boolean) => void;
+  onDeleteUser: (userId: string) => void;
   users: User[];
+  teams: Team[];
 }
 
-const DirectoryModal: React.FC<DirectoryModalProps> = ({state, onCancel, onCreateTeam, onCreateUser, onAddMember, users}) => {
+const DirectoryModal: React.FC<DirectoryModalProps> = ({state, onCancel, onCreateTeam, onCreateUser, onAddMember, onRemoveMember, onDeleteTeam, onToggleAdmin, onDeleteUser, users, teams}) => {
   useInput((input: string, key: Key) => {
     if (key.escape) {
       onCancel();
@@ -382,6 +426,34 @@ const DirectoryModal: React.FC<DirectoryModalProps> = ({state, onCancel, onCreat
 
   if (state.kind === 'addMember') {
     return <AddMemberModal team={state.team} users={users} onSubmit={onAddMember} />;
+  }
+
+  if (state.kind === 'teamConfig') {
+    return (
+      <TeamConfigModal
+        team={teams.find((t) => t.id === state.teamId) ?? null}
+        users={users}
+        onAddMember={(teamId, userId) => {
+          const t = teams.find((tt) => tt.id === teamId);
+          if (t) onAddMember(t, userId);
+        }}
+        onRemoveMember={(teamId, userId) => {
+          const t = teams.find((tt) => tt.id === teamId);
+          if (t) onRemoveMember(t, userId);
+        }}
+        onDeleteTeam={onDeleteTeam}
+      />
+    );
+  }
+
+  if (state.kind === 'userConfig') {
+    return (
+      <UserConfigModal
+        user={users.find((u) => u.id === state.userId) ?? null}
+        onToggleAdmin={onToggleAdmin}
+        onDeleteUser={onDeleteUser}
+      />
+    );
   }
 
   return null;
@@ -464,3 +536,162 @@ const AddMemberModal: React.FC<AddMemberModalProps> = ({team, users, onSubmit}) 
 };
 
 export default Directory;
+
+interface TeamConfigModalProps {
+  team: Team | null;
+  users: User[];
+  onAddMember: (teamId: string, userId: string) => void;
+  onRemoveMember: (teamId: string, userId: string) => void;
+  onDeleteTeam: (teamId: string) => void;
+}
+
+const TeamConfigModal: React.FC<TeamConfigModalProps> = ({team, users, onAddMember, onRemoveMember, onDeleteTeam}) => {
+  const [step, setStep] = useState<'menu' | 'add' | 'remove' | 'confirm-delete'>('menu');
+  const [eligible, setEligible] = useState<User[]>([]);
+
+  useEffect(() => {
+    if (!team) return;
+    if (step === 'add') {
+      const available = users.filter((u) => !team.members?.some((m) => m.id === u.id));
+      setEligible(available);
+    }
+    if (step === 'remove') {
+      const present = users.filter((u) => team.members?.some((m) => m.id === u.id));
+      setEligible(present);
+    }
+  }, [step, team, users]);
+
+  if (!team) {
+    return (
+      <Modal title="Team settings">
+        <Text color="red">Team not found.</Text>
+      </Modal>
+    );
+  }
+
+  if (step === 'menu') {
+    const items = [
+      {label: 'Add member', value: 'add' as const},
+      {label: 'Remove member', value: 'remove' as const},
+      {label: 'Delete team', value: 'delete' as const},
+      {label: 'Close', value: 'close' as const}
+    ];
+    return (
+      <Modal title={`Team: ${team.name}`}>
+        <Text color="gray">Members: {team.members?.length ?? 0}</Text>
+        <Box marginTop={1}>
+          <SelectInput<typeof items[number]['value']>
+            items={items.map((i) => ({label: i.label, value: i.value}))}
+            onSelect={(item) => {
+              if (item.value === 'add') setStep('add');
+              else if (item.value === 'remove') setStep('remove');
+              else if (item.value === 'delete') setStep('confirm-delete');
+            }}
+          />
+        </Box>
+        <Text color="gray">Enter to choose, Esc to cancel</Text>
+      </Modal>
+    );
+  }
+
+  if (step === 'add') {
+    return (
+      <Modal title={`Add member → ${team.name}`}>
+        {eligible.length === 0 ? (
+          <Text color="gray">All users are already members.</Text>
+        ) : (
+          <SelectInput<User>
+            items={eligible.map((u) => ({label: `${u.displayName ?? u.email} <${u.email}>`, value: u}))}
+            onSelect={(item) => onAddMember(team.id, item.value.id)}
+          />
+        )}
+        <Text color="gray">Enter to add, Esc to cancel</Text>
+      </Modal>
+    );
+  }
+
+  if (step === 'remove') {
+    return (
+      <Modal title={`Remove member → ${team.name}`}>
+        {eligible.length === 0 ? (
+          <Text color="gray">No members to remove.</Text>
+        ) : (
+          <SelectInput<User>
+            items={eligible.map((u) => ({label: `${u.displayName ?? u.email} <${u.email}>`, value: u}))}
+            onSelect={(item) => onRemoveMember(team.id, item.value.id)}
+          />
+        )}
+        <Text color="gray">Enter to remove, Esc to cancel</Text>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal title={`Delete team → ${team.name}`}>
+      <Text>Are you sure? This removes the team and its memberships.</Text>
+      <Box marginTop={1}>
+        <SelectInput<'yes' | 'no'>
+          items={[
+            {label: 'Yes, delete team', value: 'yes'},
+            {label: 'No, cancel', value: 'no'}
+          ]}
+          onSelect={(item) => {
+            if (item.value === 'yes') onDeleteTeam(team.id);
+          }}
+        />
+      </Box>
+      <Text color="gray">Enter to confirm, Esc to cancel</Text>
+    </Modal>
+  );
+};
+
+interface UserConfigModalProps {
+  user: User | null;
+  onToggleAdmin: (userId: string, next: boolean) => void;
+  onDeleteUser: (userId: string) => void;
+}
+
+const UserConfigModal: React.FC<UserConfigModalProps> = ({user, onToggleAdmin, onDeleteUser}) => {
+  if (!user) {
+    return (
+      <Modal title="User settings">
+        <Text color="red">User not found.</Text>
+      </Modal>
+    );
+  }
+
+  const items = [
+    {label: user.isAdmin ? 'Demote from admin' : 'Promote to admin', value: 'toggle' as const},
+    {label: 'Delete user', value: 'delete' as const},
+    {label: 'Close', value: 'close' as const}
+  ];
+
+  return (
+    <Modal title={`User: ${user.displayName ?? user.email}`}>
+      <Box flexDirection="column">
+        <Text>Email: {user.email}</Text>
+        <Text>Role: {user.isAdmin ? 'Admin' : 'Member'}</Text>
+        {user.teams && user.teams.length > 0 ? (
+          <>
+            <Text color="gray">Teams:</Text>
+            {user.teams.map((t) => (
+              <Text key={t.id}>- {t.name}</Text>
+            ))}
+          </>
+        ) : (
+          <Text color="gray">No teams</Text>
+        )}
+      </Box>
+      <Box marginTop={1}>
+        <SelectInput<typeof items[number]['value']>
+          items={items.map((i) => ({label: i.label, value: i.value}))}
+          onSelect={(item) => {
+            if (item.value === 'toggle') onToggleAdmin(user.id, !user.isAdmin);
+            if (item.value === 'delete') onDeleteUser(user.id);
+          }}
+        />
+      </Box>
+      <Text color="gray">Enter to choose, Esc to cancel</Text>
+    </Modal>
+  );
+};

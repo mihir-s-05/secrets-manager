@@ -265,7 +265,7 @@ const AppShell: React.FC = () => {
   return (
     <AppServicesContext.Provider value={serviceValue}>
       <Keymap
-        isEditing={isEditing}
+        isEditing={isEditing || isCommandPaletteOpen}
         onToggleHelp={() => setHelpVisible((prev) => !prev)}
         onOpenCommandPalette={() => setCommandPaletteOpen(true)}
         onExitRequested={handleExit}
