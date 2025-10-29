@@ -42,15 +42,24 @@ const createTeamResponseSchema = z.union([
     memberCount: z.number().int().optional()
   })
 ]);
-const createUserResponseSchema = z.union([userSchema, minimalUserSchema.extend({
-  org: z
-    .object({
-      id: z.string(),
-      name: z.string().optional()
-    })
-    .optional(),
-  teams: z.array(minimalTeamSchema.pick({id: true, name: true})).optional()
-})]);
+// For create-user, the backend may return only { id }.
+// Accept full user, minimal user, or id-only with optional fields.
+const createUserResponseSchema = z.union([
+  userSchema,
+  z.object({
+    id: z.string(),
+    email: z.string().optional(),
+    displayName: z.string().optional(),
+    isAdmin: z.boolean().optional(),
+    org: z
+      .object({
+        id: z.string(),
+        name: z.string().optional()
+      })
+      .optional(),
+    teams: z.array(minimalTeamSchema.pick({id: true, name: true})).optional()
+  })
+]);
 
 type MinimalUser = z.infer<typeof minimalUserSchema>;
 type DirectoryUser = z.infer<typeof directoryUsersResponseSchema>['users'][number];
@@ -148,7 +157,13 @@ export const createUser = async (client: ApiClient, payload: CreateUserPayload):
   });
   const parsed = createUserResponseSchema.parse(response.data);
   const fallbackOrg = getFallbackOrg();
-  return normalizeUser(parsed, fallbackOrg);
+  // Fill in any missing fields with the submitted payload for a smoother UX.
+  const enriched = {
+    ...(parsed as any),
+    email: (parsed as any).email ?? payload.email,
+    displayName: (parsed as any).displayName ?? payload.displayName
+  };
+  return normalizeUser(enriched as any, fallbackOrg);
 };
 
 export const addTeamMember = async (
@@ -185,7 +200,13 @@ export const setAdmin = async (
   });
   const parsed = createUserResponseSchema.parse(response.data);
   const fallbackOrg = getFallbackOrg();
-  return normalizeUser(parsed, fallbackOrg);
+  // Ensure required fields for normalization are present even if backend returns a minimal shape
+  const enriched = {
+    ...(parsed as any),
+    email: (parsed as any).email ?? 'unknown',
+    displayName: (parsed as any).displayName ?? (parsed as any).email ?? 'unknown'
+  };
+  return normalizeUser(enriched as any, fallbackOrg);
 };
 
 export const deleteTeam = async (client: ApiClient, teamId: string): Promise<void> => {

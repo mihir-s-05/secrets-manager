@@ -213,7 +213,8 @@ const AppShell: React.FC = () => {
 
     const left = role ? `${who} (${role})` : who;
     const middle = session.serverUrl;
-    const right = `${routeLabel} • ? help`;
+    const viewAs = session.viewAsUserId ? ` • viewing as ${session.viewAsUserName ?? session.viewAsUserId}` : '';
+    const right = `${routeLabel} • ? help${viewAs}`;
 
     return (
       <Box paddingX={1}>

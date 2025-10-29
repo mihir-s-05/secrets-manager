@@ -26,7 +26,7 @@ interface DirectoryProps {
   defaultTab?: 'users' | 'teams';
 }
 
-type TabKey = 'teams' | 'users';
+type TabKey = 'org' | 'teams' | 'users';
 
 type ModalState =
   | {kind: 'createTeam'}
@@ -36,13 +36,13 @@ type ModalState =
   | {kind: 'userConfig'; userId: string}
   | null;
 
-type FocusArea = 'teams' | 'members' | 'users';
+type FocusArea = 'org' | 'teams' | 'members' | 'users';
 
 const Directory: React.FC<DirectoryProps> = ({defaultTab = 'teams'}) => {
   const {client, notify, session, setEditing, setEscapeHandler} = useAppServices();
   const router = useRouter();
 
-  const [tab, setTab] = useState<TabKey>(defaultTab);
+  const [tab, setTab] = useState<TabKey>(defaultTab === 'users' ? 'users' : 'teams');
   const [teams, setTeams] = useState<Team[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,7 +50,7 @@ const Directory: React.FC<DirectoryProps> = ({defaultTab = 'teams'}) => {
   const [modal, setModal] = useState<ModalState>(null);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
-  const [focusArea, setFocusArea] = useState<FocusArea>(defaultTab === 'teams' ? 'teams' : 'users');
+  const [focusArea, setFocusArea] = useState<FocusArea>(defaultTab === 'users' ? 'users' : 'teams');
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
   const isAdmin = session.user?.isAdmin ?? false;
@@ -75,8 +75,12 @@ const Directory: React.FC<DirectoryProps> = ({defaultTab = 'teams'}) => {
   }, [client, notify]);
 
   useEffect(() => {
-    setEditing(false);
+    setEditing(!!modal);
     setEscapeHandler(() => {
+      if (modal) {
+        setModal(null);
+        return true;
+      }
       router.pop();
       return true;
     });
@@ -84,12 +88,14 @@ const Directory: React.FC<DirectoryProps> = ({defaultTab = 'teams'}) => {
     return () => {
       setEscapeHandler(null);
     };
-  }, [loadDirectory, router, setEditing, setEscapeHandler]);
+  }, [loadDirectory, modal, router, setEditing, setEscapeHandler]);
 
-  // Suppress global shortcuts while any modal is open (text entry or selection)
+  // keep focus area in sync with tab
   useEffect(() => {
-    setEditing(!!modal);
-  }, [modal, setEditing]);
+    if (tab === 'org') setFocusArea('org');
+    if (tab === 'teams') setFocusArea('teams');
+    if (tab === 'users') setFocusArea('users');
+  }, [tab]);
 
   useEffect(() => {
     // Reset member selection when team changes
@@ -112,14 +118,11 @@ const Directory: React.FC<DirectoryProps> = ({defaultTab = 'teams'}) => {
       return;
     }
 
-    if (key.leftArrow) {
-      setTab('teams');
-      setFocusArea('teams');
-      return;
-    }
-    if (key.rightArrow) {
-      setTab('users');
-      setFocusArea('users');
+    if (key.leftArrow || key.rightArrow) {
+      const order: TabKey[] = ['org', 'teams', 'users'];
+      const idx = order.indexOf(tab);
+      const next = key.rightArrow ? (idx + 1) % order.length : (idx - 1 + order.length) % order.length;
+      setTab(order[next]);
       return;
     }
 
@@ -202,7 +205,6 @@ const Directory: React.FC<DirectoryProps> = ({defaultTab = 'teams'}) => {
       notify(`Failed to add member: ${(err as Error).message}`, 'error');
     } finally {
       setWorking(false);
-      setModal(null);
     }
   };
 
@@ -236,18 +238,30 @@ const Directory: React.FC<DirectoryProps> = ({defaultTab = 'teams'}) => {
   return (
     <Box flexDirection="column" gap={1}>
       <Box flexDirection="row" gap={2}>
+        <Text color={tab === 'org' ? 'cyan' : undefined}>Organization</Text>
         <Text color={tab === 'teams' ? 'cyan' : undefined}>Teams</Text>
         <Text color={tab === 'users' ? 'cyan' : undefined}>Users</Text>
       </Box>
 
-      {tab === 'teams' ? (
+      {tab === 'org' ? (
+        <Box flexDirection="column">
+          <Text color="gray">Organization</Text>
+          <Box flexDirection="column">
+            <Text>Name: {session.user?.org?.name ?? 'Unknown'}</Text>
+            <Text>ID: {session.user?.org?.id ?? 'unknown'}</Text>
+            <Text>Teams: {teams.length}</Text>
+            <Text>Users: {users.length}</Text>
+          </Box>
+        </Box>
+      ) : tab === 'teams' ? (
         <Box flexDirection="row" gap={2}>
           <Box flexDirection="column" width="50%">
             <Text color="gray">Teams</Text>
             <List
-              isActive={focusArea === 'teams'}
+              isActive={focusArea === 'teams' && !modal}
               items={teams}
               itemKey={(team) => team.id}
+              maxVisible={10}
               onHighlight={(team) => {
                 setSelectedTeamId(team.id);
               }}
@@ -264,8 +278,9 @@ const Directory: React.FC<DirectoryProps> = ({defaultTab = 'teams'}) => {
           <Box flexDirection="column" width="50%">
             <Text color="gray">Members</Text>
             <List
-              isActive={focusArea === 'members'}
+              isActive={focusArea === 'members' && !modal}
               items={teamMembers}
+              maxVisible={10}
               itemKey={(member) => member.id}
               onHighlight={(member) => setSelectedMemberId(member.id)}
               renderItem={({item, isHighlighted}) => (
@@ -280,8 +295,9 @@ const Directory: React.FC<DirectoryProps> = ({defaultTab = 'teams'}) => {
           <Box flexDirection="column" width="50%">
             <Text color="gray">Users</Text>
             <List
-              isActive={focusArea === 'users'}
+              isActive={focusArea === 'users' && !modal}
               items={users}
+              maxVisible={10}
               itemKey={(user) => user.id}
               onHighlight={(user) => setSelectedUserId(user.id)}
               onSubmit={(user) => setModal({kind: 'userConfig', userId: user.id})}
@@ -442,6 +458,7 @@ const DirectoryModal: React.FC<DirectoryModalProps> = ({state, onCancel, onCreat
           if (t) onRemoveMember(t, userId);
         }}
         onDeleteTeam={onDeleteTeam}
+        onCancel={onCancel}
       />
     );
   }
@@ -452,6 +469,7 @@ const DirectoryModal: React.FC<DirectoryModalProps> = ({state, onCancel, onCreat
         user={users.find((u) => u.id === state.userId) ?? null}
         onToggleAdmin={onToggleAdmin}
         onDeleteUser={onDeleteUser}
+        onCancel={onCancel}
       />
     );
   }
@@ -543,9 +561,10 @@ interface TeamConfigModalProps {
   onAddMember: (teamId: string, userId: string) => void;
   onRemoveMember: (teamId: string, userId: string) => void;
   onDeleteTeam: (teamId: string) => void;
+  onCancel: () => void;
 }
 
-const TeamConfigModal: React.FC<TeamConfigModalProps> = ({team, users, onAddMember, onRemoveMember, onDeleteTeam}) => {
+const TeamConfigModal: React.FC<TeamConfigModalProps> = ({team, users, onAddMember, onRemoveMember, onDeleteTeam, onCancel}) => {
   const [step, setStep] = useState<'menu' | 'add' | 'remove' | 'confirm-delete'>('menu');
   const [eligible, setEligible] = useState<User[]>([]);
 
@@ -586,6 +605,7 @@ const TeamConfigModal: React.FC<TeamConfigModalProps> = ({team, users, onAddMemb
               if (item.value === 'add') setStep('add');
               else if (item.value === 'remove') setStep('remove');
               else if (item.value === 'delete') setStep('confirm-delete');
+              else onCancel();
             }}
           />
         </Box>
@@ -637,6 +657,7 @@ const TeamConfigModal: React.FC<TeamConfigModalProps> = ({team, users, onAddMemb
           ]}
           onSelect={(item) => {
             if (item.value === 'yes') onDeleteTeam(team.id);
+            if (item.value === 'no') onCancel();
           }}
         />
       </Box>
@@ -649,9 +670,10 @@ interface UserConfigModalProps {
   user: User | null;
   onToggleAdmin: (userId: string, next: boolean) => void;
   onDeleteUser: (userId: string) => void;
+  onCancel: () => void;
 }
 
-const UserConfigModal: React.FC<UserConfigModalProps> = ({user, onToggleAdmin, onDeleteUser}) => {
+const UserConfigModal: React.FC<UserConfigModalProps> = ({user, onToggleAdmin, onDeleteUser, onCancel}) => {
   if (!user) {
     return (
       <Modal title="User settings">
@@ -660,11 +682,8 @@ const UserConfigModal: React.FC<UserConfigModalProps> = ({user, onToggleAdmin, o
     );
   }
 
-  const items = [
-    {label: user.isAdmin ? 'Demote from admin' : 'Promote to admin', value: 'toggle' as const},
-    {label: 'Delete user', value: 'delete' as const},
-    {label: 'Close', value: 'close' as const}
-  ];
+  // Current user context comes via a hidden env through Directory; we infer by exposed label only.
+  // The parent will only render this modal; demotion logic is enforced server-side as well.
 
   return (
     <Modal title={`User: ${user.displayName ?? user.email}`}>
@@ -683,15 +702,36 @@ const UserConfigModal: React.FC<UserConfigModalProps> = ({user, onToggleAdmin, o
         )}
       </Box>
       <Box marginTop={1}>
-        <SelectInput<typeof items[number]['value']>
-          items={items.map((i) => ({label: i.label, value: i.value}))}
-          onSelect={(item) => {
-            if (item.value === 'toggle') onToggleAdmin(user.id, !user.isAdmin);
-            if (item.value === 'delete') onDeleteUser(user.id);
-          }}
-        />
+        <UserActions user={user} onToggleAdmin={onToggleAdmin} onDeleteUser={onDeleteUser} onCancel={onCancel} />
       </Box>
       <Text color="gray">Enter to choose, Esc to cancel</Text>
     </Modal>
+  );
+};
+
+const UserActions: React.FC<{user: User; onToggleAdmin: (userId: string, next: boolean) => void; onDeleteUser: (userId: string) => void; onCancel: () => void}> = ({user, onToggleAdmin, onDeleteUser, onCancel}) => {
+  const {session} = useAppServices();
+  const currentUserId = session.user?.id;
+  const canDemote = !(user.isAdmin && user.id !== currentUserId);
+
+  const items: Array<{label: string; value: 'toggle' | 'delete' | 'close'}> = [];
+  items.push({label: user.isAdmin ? (canDemote ? 'Demote from admin' : 'Demote from admin (not allowed)') : 'Promote to admin', value: 'toggle'});
+  items.push({label: 'Delete user', value: 'delete'});
+  items.push({label: 'Close', value: 'close'});
+
+  return (
+    <SelectInput<'toggle' | 'delete' | 'close'>
+      items={items.map((i) => ({label: i.label, value: i.value}))}
+      onSelect={(item) => {
+        if (item.value === 'toggle') {
+          if (!canDemote && user.isAdmin) {
+            return; // blocked
+          }
+          onToggleAdmin(user.id, !user.isAdmin);
+        }
+        if (item.value === 'delete') onDeleteUser(user.id);
+        if (item.value === 'close') onCancel();
+      }}
+    />
   );
 };

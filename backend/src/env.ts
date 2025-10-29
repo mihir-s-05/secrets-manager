@@ -1,8 +1,6 @@
 import { config as loadEnv } from 'dotenv';
 import { z } from 'zod';
 
-loadEnv();
-
 const booleanFromEnv = z
   .preprocess((value) => {
     if (typeof value === 'string') {
@@ -52,17 +50,39 @@ const schema = z.object({
   GITHUB_CLIENT_SECRET: z.string().default('')
 });
 
-const parsed = schema.safeParse(process.env);
+// Load initial environment
+loadEnv();
+let currentEnv = loadAndParseEnv();
 
-if (!parsed.success) {
-  const details = parsed.error.errors
-    .map((issue) => {
-      const path = issue.path.join('.') || 'root';
-      return `${path}: ${issue.message}`;
-    })
-    .join('\n');
-  throw new Error(`Invalid environment configuration:\n${details}`);
+function loadAndParseEnv() {
+  const parsed = schema.safeParse(process.env);
+
+  if (!parsed.success) {
+    const details = parsed.error.errors
+      .map((issue) => {
+        const path = issue.path.join('.') || 'root';
+        return `${path}: ${issue.message}`;
+      })
+      .join('\n');
+    throw new Error(`Invalid environment configuration:\n${details}`);
+  }
+
+  return Object.freeze(parsed.data);
 }
 
-export const env = Object.freeze(parsed.data);
-export type Env = typeof env;
+export const env = new Proxy(currentEnv, {
+  get(target, prop) {
+    return target[prop as keyof typeof target];
+  }
+});
+
+export type Env = typeof currentEnv;
+
+export function reloadEnv(): void {
+  // Clear dotenv cache and reload
+  delete require.cache[require.resolve('dotenv')];
+  loadEnv();
+
+  // Re-parse environment variables
+  currentEnv = loadAndParseEnv();
+}

@@ -146,6 +146,8 @@ const SecretsList: React.FC = () => {
       ) : (
         <List
           focusId="secrets-list"
+          isActive={!filterActive}
+          maxVisible={12}
           items={filteredSecrets}
           itemKey={(item) => item.id}
           onHighlight={(item) => setSelectedSecret(item)}
@@ -168,6 +170,7 @@ const SecretsList: React.FC = () => {
         <KeyLegend
           items={[
             {key: 'Enter', description: 'View secret'},
+            {key: 'j/k', description: 'Move down/up'},
             {key: 'n', description: 'New secret'},
             {key: 'e', description: 'Edit secret'},
             {key: 'r', description: 'Refresh'},

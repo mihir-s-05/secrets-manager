@@ -51,6 +51,7 @@ const SecretView: React.FC<SecretViewProps> = ({secretId}) => {
   }, [router, setEscapeHandler]);
 
   const canEdit = secret?.myPermissions.write ?? false;
+  const canRead = secret?.myPermissions.read ?? false;
 
   useInput((input: string, key: Key) => {
     if (input === 'b') {
@@ -60,7 +61,9 @@ const SecretView: React.FC<SecretViewProps> = ({secretId}) => {
       router.push('SECRET_EDIT', {mode: 'edit', secretId: secret.id});
     }
     if (input === '*') {
-      setRevealed((prev) => !prev);
+      if (canRead) {
+        setRevealed((prev) => !prev);
+      }
     }
     if (input === 'h') {
       notify('History view is not implemented yet.', 'info');
@@ -69,9 +72,13 @@ const SecretView: React.FC<SecretViewProps> = ({secretId}) => {
 
   const displayValue = useMemo(() => {
     if (!secret) return '';
+    if (!canRead) {
+      // Do not derive mask length from actual value when not authorized
+      return '********';
+    }
     if (revealed) return secret.value;
     return maskValue(secret.value);
-  }, [secret, revealed]);
+  }, [secret, revealed, canRead]);
 
   return (
     <Box flexDirection="column">
@@ -88,7 +95,7 @@ const SecretView: React.FC<SecretViewProps> = ({secretId}) => {
           <Box flexDirection="column" marginBottom={1}>
             <Text color="gray">Value</Text>
             <Text>{displayValue}</Text>
-            <Text color="gray">Press * to toggle visibility.</Text>
+            <Text color="gray">{canRead ? 'Press * to toggle visibility.' : 'You do not have read access.'}</Text>
           </Box>
           <Box flexDirection="column">
             <Text color="gray">Access control</Text>
@@ -118,7 +125,7 @@ const SecretView: React.FC<SecretViewProps> = ({secretId}) => {
           items={[
             {key: 'b', description: 'Back to list'},
             {key: 'e', description: 'Edit secret'},
-            {key: '*', description: 'Toggle value visibility'},
+            ...(canRead ? [{key: '*', description: 'Toggle value visibility'}] as const : []),
             {key: 'h', description: 'View history (optional)'}
           ]}
         />

@@ -195,8 +195,46 @@ const secretsRoutes: FastifyPluginAsync = async (fastify) => {
         return sendError(reply, 401, 'unauthorized', 'Authorization required');
       }
 
+      const querySchema = z.object({
+        asUserId: z.string().min(1).optional()
+      });
+
+      const parsedQuery = querySchema.safeParse(request.query);
+      if (!parsedQuery.success) {
+        return sendZodError(reply, parsedQuery.error);
+      }
+
+      // Determine effective user context for permission evaluation (admin view-as)
+      let effectiveUser = request.user;
+      if (parsedQuery.data.asUserId) {
+        if (!request.user.isAdmin) {
+          return sendError(reply, 403, 'forbidden', 'Admin privileges required for view-as');
+        }
+
+        const target = await fastify.prisma.user.findUnique({
+          where: { id: parsedQuery.data.asUserId },
+          select: {
+            id: true,
+            orgId: true,
+            isAdmin: true,
+            memberships: { select: { teamId: true } }
+          }
+        });
+
+        if (!target || target.orgId !== request.user.orgId) {
+          return sendError(reply, 404, 'not_found', 'User not found');
+        }
+
+        effectiveUser = {
+          id: target.id,
+          orgId: target.orgId,
+          isAdmin: target.isAdmin,
+          teamIds: new Set(target.memberships.map((m: { teamId: string }) => m.teamId))
+        };
+      }
+
       const secrets = await fastify.prisma.secret.findMany({
-        where: { orgId: request.user.orgId },
+        where: { orgId: effectiveUser.orgId },
         select: {
           id: true,
           key: true,
@@ -242,14 +280,16 @@ const secretsRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       const results = [];
+      // Admins always retain implicit access regardless of view-as
+      const adminImplicit = env.ADMIN_IMPLICIT_ACCESS;
 
       for (const secret of secrets) {
         const secretAcls = aclMap.get(secret.id) ?? [];
         const permissions = resolvePermissions(
-          request.user,
-          { orgId: request.user.orgId },
+          effectiveUser,
+          { orgId: effectiveUser.orgId },
           secretAcls,
-          env.ADMIN_IMPLICIT_ACCESS
+          adminImplicit
         );
 
         if (!permissions.read) {
@@ -281,23 +321,63 @@ const secretsRoutes: FastifyPluginAsync = async (fastify) => {
         id: z.string().min(1)
       });
 
+      const querySchema = z.object({
+        asUserId: z.string().min(1).optional()
+      });
+
       const parsedParams = paramsSchema.safeParse(request.params);
       if (!parsedParams.success) {
         return sendZodError(reply, parsedParams.error);
       }
 
-      const secret = await loadSecretWithAcls(fastify, parsedParams.data.id, request.user.orgId);
+      const parsedQuery = querySchema.safeParse(request.query);
+      if (!parsedQuery.success) {
+        return sendZodError(reply, parsedQuery.error);
+      }
+
+      // Determine effective user context for permission evaluation (admin view-as)
+      let effectiveUser = request.user;
+      if (parsedQuery.data.asUserId) {
+        if (!request.user.isAdmin) {
+          return sendError(reply, 403, 'forbidden', 'Admin privileges required for view-as');
+        }
+
+        const target = await fastify.prisma.user.findUnique({
+          where: { id: parsedQuery.data.asUserId },
+          select: {
+            id: true,
+            orgId: true,
+            isAdmin: true,
+            memberships: { select: { teamId: true } }
+          }
+        });
+
+        if (!target || target.orgId !== request.user.orgId) {
+          return sendError(reply, 404, 'not_found', 'User not found');
+        }
+
+        effectiveUser = {
+          id: target.id,
+          orgId: target.orgId,
+          isAdmin: target.isAdmin,
+          teamIds: new Set(target.memberships.map((m: { teamId: string }) => m.teamId))
+        };
+      }
+
+      const secret = await loadSecretWithAcls(fastify, parsedParams.data.id, effectiveUser.orgId);
 
       if (!secret) {
         return sendError(reply, 404, 'not_found', 'Secret not found');
       }
 
       const currentAcls = mapAclRecords(secret.acls);
+      // Admins always retain implicit access regardless of view-as
+      const adminImplicit = env.ADMIN_IMPLICIT_ACCESS;
       const permissions = resolvePermissions(
-        request.user,
+        effectiveUser,
         { orgId: secret.orgId },
         currentAcls,
-        env.ADMIN_IMPLICIT_ACCESS
+        adminImplicit
       );
 
       if (!permissions.read) {
@@ -349,6 +429,27 @@ const secretsRoutes: FastifyPluginAsync = async (fastify) => {
         return sendError(reply, 400, 'bad_request', normalizedResult.message);
       }
 
+      // Ensure the creator can always see and manage the secret they just created.
+      // If the provided ACLs do not grant the creator read+write, add an implicit user ACL.
+      let finalAcls = normalizedResult.value;
+      const creatorPerms = resolvePermissions(
+        request.user,
+        { orgId: request.user.orgId },
+        finalAcls,
+        env.ADMIN_IMPLICIT_ACCESS
+      );
+      if (!(creatorPerms.read && creatorPerms.write)) {
+        finalAcls = dedupeAcls([
+          ...finalAcls,
+          {
+            principal: 'user',
+            principalId: request.user.id,
+            canRead: true,
+            canWrite: true
+          }
+        ]);
+      }
+
       try {
         const secretId = await fastify.prisma.$transaction(async (tx) => {
           const created = await tx.secret.create({
@@ -362,9 +463,9 @@ const secretsRoutes: FastifyPluginAsync = async (fastify) => {
             select: { id: true }
           });
 
-          if (normalizedResult.value.length > 0) {
+          if (finalAcls.length > 0) {
             await tx.secretAcl.createMany({
-              data: normalizedResult.value.map((acl) => ({
+              data: finalAcls.map((acl) => ({
                 secretId: created.id,
                 principal: acl.principal,
                 principalId: acl.principalId,
@@ -400,6 +501,10 @@ const secretsRoutes: FastifyPluginAsync = async (fastify) => {
         id: z.string().min(1)
       });
 
+      const querySchema = z.object({
+        asUserId: z.string().min(1).optional()
+      });
+
       const bodySchema = z
         .object({
           value: z.string().min(1).optional(),
@@ -431,22 +536,58 @@ const secretsRoutes: FastifyPluginAsync = async (fastify) => {
         return sendZodError(reply, parsedBody.error);
       }
 
-      const secret = await loadSecretWithAcls(fastify, parsedParams.data.id, request.user.orgId);
+      const parsedQuery = querySchema.safeParse(request.query);
+      if (!parsedQuery.success) {
+        return sendZodError(reply, parsedQuery.error);
+      }
+
+      // Determine effective user context for permission evaluation (admin view-as)
+      let effectiveUser = request.user;
+      if (parsedQuery.data.asUserId) {
+        if (!request.user.isAdmin) {
+          return sendError(reply, 403, 'forbidden', 'Admin privileges required for view-as');
+        }
+
+        const target = await fastify.prisma.user.findUnique({
+          where: { id: parsedQuery.data.asUserId },
+          select: {
+            id: true,
+            orgId: true,
+            isAdmin: true,
+            memberships: { select: { teamId: true } }
+          }
+        });
+
+        if (!target || target.orgId !== request.user.orgId) {
+          return sendError(reply, 404, 'not_found', 'User not found');
+        }
+
+        effectiveUser = {
+          id: target.id,
+          orgId: target.orgId,
+          isAdmin: target.isAdmin,
+          teamIds: new Set(target.memberships.map((m: { teamId: string }) => m.teamId))
+        };
+      }
+
+      const secret = await loadSecretWithAcls(fastify, parsedParams.data.id, effectiveUser.orgId);
 
       if (!secret) {
         return sendError(reply, 404, 'not_found', 'Secret not found');
       }
 
       const currentAcls = mapAclRecords(secret.acls);
+      // Admins always retain implicit access regardless of view-as
+      const adminImplicit = env.ADMIN_IMPLICIT_ACCESS;
       const permissions = resolvePermissions(
-        request.user,
+        effectiveUser,
         { orgId: secret.orgId },
         currentAcls,
-        env.ADMIN_IMPLICIT_ACCESS
+        adminImplicit
       );
 
       const hasWriteAccess =
-        permissions.write || (secret.createdBy === request.user.id && request.user.orgId === secret.orgId);
+        permissions.write || (secret.createdBy === effectiveUser.id && effectiveUser.orgId === secret.orgId);
 
       if (!hasWriteAccess) {
         return sendError(reply, 403, 'forbidden', 'Write access denied');
@@ -557,23 +698,62 @@ const secretsRoutes: FastifyPluginAsync = async (fastify) => {
         id: z.string().min(1)
       });
 
+      const querySchema = z.object({
+        asUserId: z.string().min(1).optional()
+      });
+
       const parsedParams = paramsSchema.safeParse(request.params);
       if (!parsedParams.success) {
         return sendZodError(reply, parsedParams.error);
       }
 
-      const secret = await loadSecretWithAcls(fastify, parsedParams.data.id, request.user.orgId);
+      const parsedQuery = querySchema.safeParse(request.query);
+      if (!parsedQuery.success) {
+        return sendZodError(reply, parsedQuery.error);
+      }
+
+      // Determine effective user context for permission evaluation (admin view-as)
+      let effectiveUser = request.user;
+      if (parsedQuery.data.asUserId) {
+        if (!request.user.isAdmin) {
+          return sendError(reply, 403, 'forbidden', 'Admin privileges required for view-as');
+        }
+
+        const target = await fastify.prisma.user.findUnique({
+          where: { id: parsedQuery.data.asUserId },
+          select: {
+            id: true,
+            orgId: true,
+            isAdmin: true,
+            memberships: { select: { teamId: true } }
+          }
+        });
+
+        if (!target || target.orgId !== request.user.orgId) {
+          return sendError(reply, 404, 'not_found', 'User not found');
+        }
+
+        effectiveUser = {
+          id: target.id,
+          orgId: target.orgId,
+          isAdmin: target.isAdmin,
+          teamIds: new Set(target.memberships.map((m: { teamId: string }) => m.teamId))
+        };
+      }
+
+      const secret = await loadSecretWithAcls(fastify, parsedParams.data.id, effectiveUser.orgId);
 
       if (!secret) {
         return sendError(reply, 404, 'not_found', 'Secret not found');
       }
 
       const normalizedAcls = mapAclRecords(secret.acls);
+      const adminImplicit = parsedQuery.data.asUserId ? false : env.ADMIN_IMPLICIT_ACCESS;
       const permissions = resolvePermissions(
-        request.user,
+        effectiveUser,
         { orgId: secret.orgId },
         normalizedAcls,
-        env.ADMIN_IMPLICIT_ACCESS
+        adminImplicit
       );
 
       if (!permissions.read) {
@@ -590,7 +770,6 @@ const secretsRoutes: FastifyPluginAsync = async (fastify) => {
           updatedAt: true
         }
       });
-
       return reply.send(history);
     }
   );

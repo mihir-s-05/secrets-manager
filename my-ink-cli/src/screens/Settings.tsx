@@ -79,11 +79,24 @@ const Settings: React.FC = () => {
     }
   }, [client, clearSession, notify, router]);
 
-  const handleReset = useCallback(() => {
+  const handleReset = useCallback(async () => {
+    // Reset local app state
     resetSession();
-    notify('Application state reset.', 'success');
+
+    // If user is admin, also reload backend environment
+    if (session.user?.isAdmin) {
+      try {
+        await client.request('/admin/reload-env', { method: 'POST' });
+        notify('Application state reset and backend environment reloaded.', 'success');
+      } catch (err) {
+        notify(`Application state reset. Backend environment reload failed: ${(err as Error).message}`, 'error');
+      }
+    } else {
+      notify('Application state reset.', 'success');
+    }
+
     router.replace('HOME');
-  }, [notify, resetSession, router]);
+  }, [notify, resetSession, router, session.user?.isAdmin, client]);
 
   const handleReloadProfile = useCallback(async () => {
     setSaving(true);
@@ -111,6 +124,7 @@ const Settings: React.FC = () => {
         <Text>- Press Ctrl+S to save</Text>
         <Text>- Press l to logout</Text>
         <Text>- Press x to reset app state</Text>
+        {session.user?.isAdmin && <Text>- Press x to also reload backend env (admin only)</Text>}
         <Text>- Press r to reload profile</Text>
       </Box>
       {saving ? <Spinner label="Processing" /> : null}
@@ -118,7 +132,7 @@ const Settings: React.FC = () => {
         items={[
           {key: 'Ctrl+S', description: 'Save server URL'},
           {key: 'l', description: 'Logout'},
-          {key: 'x', description: 'Reset app state'},
+          {key: 'x', description: session.user?.isAdmin ? 'Reset app state & reload backend env' : 'Reset app state'},
           {key: 'r', description: 'Reload profile from server'},
           {key: 'Esc', description: 'Back'}
         ]}

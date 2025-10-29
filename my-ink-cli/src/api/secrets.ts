@@ -11,6 +11,7 @@ import {
   type SecretWritePayload
 } from '../types/dto.js';
 import {sessionStore} from '../state/session.js';
+import {fetchTeams, fetchUsers} from './directory.js';
 
 const secretListSchema = z.array(secretSummarySchema);
 const secretHistorySchema = z.array(secretHistoryItemSchema);
@@ -66,6 +67,17 @@ export const fetchSecretDetail = async (client: ApiClient, id: string): Promise<
   const orgId = snapshot.user?.org.id;
   const orgName = snapshot.user?.org.name;
 
+  // Fetch directory to resolve principal names
+  let usersById = new Map<string, {displayName?: string; email?: string}>();
+  let teamsById = new Map<string, {name: string}>();
+  try {
+    const [users, teams] = await Promise.all([fetchUsers(client), fetchTeams(client)]);
+    usersById = new Map(users.map((u) => [u.id, {displayName: u.displayName, email: u.email}]));
+    teamsById = new Map(teams.map((t) => [t.id, {name: t.name}]));
+  } catch {
+    // If directory fetch fails, fall back gracefully; names will be IDs
+  }
+
   const mapped: SecretDetail = {
     id: backend.id,
     key: backend.key,
@@ -73,12 +85,35 @@ export const fetchSecretDetail = async (client: ApiClient, id: string): Promise<
     version: backend.version,
     updatedAt: backend.updatedAt,
     myPermissions: backend.myPermissions,
-    acls: backend.acls.map((acl) => ({
-      principalType: acl.principal,
-      principalId: acl.principal === 'org' ? orgId ?? 'org' : acl.principalId ?? '',
-      principalName: acl.principal === 'org' ? orgName ?? 'Organization' : acl.principalId ?? '',
-      permissions: {read: acl.canRead, write: acl.canWrite}
-    }))
+    acls: backend.acls.map((acl) => {
+      if (acl.principal === 'org') {
+        return {
+          principalType: 'org' as const,
+          principalId: orgId ?? 'org',
+          principalName: orgName ?? 'Organization',
+          permissions: {read: acl.canRead, write: acl.canWrite}
+        };
+      }
+      if (acl.principal === 'user') {
+        const info = acl.principalId ? usersById.get(acl.principalId) : undefined;
+        const name = info?.displayName ?? info?.email ?? acl.principalId ?? '';
+        return {
+          principalType: 'user' as const,
+          principalId: acl.principalId ?? '',
+          principalName: name,
+          permissions: {read: acl.canRead, write: acl.canWrite}
+        };
+      }
+      // team
+      const info = acl.principalId ? teamsById.get(acl.principalId) : undefined;
+      const name = info?.name ?? acl.principalId ?? '';
+      return {
+        principalType: 'team' as const,
+        principalId: acl.principalId ?? '',
+        principalName: name,
+        permissions: {read: acl.canRead, write: acl.canWrite}
+      };
+    })
   };
 
   // Validate the mapped object conforms to CLI expectations

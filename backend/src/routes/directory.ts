@@ -45,6 +45,17 @@ const directoryRoutes: FastifyPluginAsync = async (fastify) => {
         select: {
           id: true,
           name: true,
+          members: {
+            select: {
+              user: {
+                select: {
+                  id: true,
+                  displayName: true,
+                  email: true
+                }
+              }
+            }
+          },
           _count: {
             select: {
               members: true
@@ -58,6 +69,11 @@ const directoryRoutes: FastifyPluginAsync = async (fastify) => {
         teams.map((team) => ({
           id: team.id,
           name: team.name,
+          members: team.members.map((m) => ({
+            id: m.user.id,
+            displayName: m.user.displayName ?? undefined,
+            email: m.user.email ?? undefined
+          })),
           memberCount: team._count.members
         }))
       );

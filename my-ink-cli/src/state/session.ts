@@ -9,6 +9,8 @@ export interface SessionSnapshot {
   accessTokenExpiresAt?: number;
   refreshToken?: string;
   user?: User | null;
+  viewAsUserId?: string;
+  viewAsUserName?: string;
 }
 
 const DEFAULT_SERVER_URL = 'http://localhost:4000';
@@ -34,7 +36,9 @@ const getSnapshot = (): SessionSnapshot => {
     accessToken: conf.get('accessToken'),
     accessTokenExpiresAt: conf.get('accessTokenExpiresAt'),
     refreshToken: conf.get('refreshToken'),
-    user: conf.get('user') ?? null
+    user: conf.get('user') ?? null,
+    viewAsUserId: conf.get('viewAsUserId'),
+    viewAsUserName: conf.get('viewAsUserName')
   } as SessionSnapshot;
 
   return snapshot;

@@ -148,6 +148,14 @@ curl -s "$API_BASE/secrets/$SECRET_ID" \
 
 If the user loses write access, `PATCH /secrets/$SECRET_ID` will return `403` with `{ "error": { "code": "forbidden" } }`.
 
+Admins can preview the app as a specific user by passing `asUserId` on secrets endpoints. Admins always retain implicit read/write access within their organization, even when previewing another user; `asUserId` only affects the user context displayed, not the admin's ability to view or modify secrets:
+
+```bash
+# Admin previews as another user; admins still have full read/write access.
+curl -s "$API_BASE/secrets/$SECRET_ID?asUserId=$NEW_USER_ID" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | jq
+```
+
 ## Database & Seeding
 
 The Prisma schema models organizations, users, teams, secrets, ACLs, history, and refresh tokens. The deterministic seed script ensures there is exactly one organization named **Acme** and an admin user (`Admin`) linked to it. Override the seeded admin email by setting `ADMIN_EMAIL` before running `npm run prisma:seed`.

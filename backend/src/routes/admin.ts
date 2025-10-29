@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { sendError, sendZodError } from '../utils/errors.js';
+import { reloadEnv } from '../env.js';
 
 const adminRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post(
@@ -107,13 +108,27 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
         }
       }
 
+      // Prevent an admin from demoting other admins
+      if (
+        isAdmin === false &&
+        userRecord.isAdmin &&
+        request.user.id !== userRecord.id
+      ) {
+        return sendError(reply, 403, 'forbidden', 'Admins cannot demote other admins');
+      }
+
       const updated = await fastify.prisma.user.update({
         where: { id },
         data: {
           ...(isAdmin !== undefined ? { isAdmin } : {}),
           ...(reassignOrgId ? { orgId: reassignOrgId } : {})
         },
-        select: { id: true }
+        select: {
+          id: true,
+          email: true,
+          displayName: true,
+          isAdmin: true
+        }
       });
 
       return reply.status(200).send(updated);
@@ -324,6 +339,27 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       return reply.status(204).send();
+    }
+  );
+
+  fastify.post(
+    '/admin/reload-env',
+    { preHandler: fastify.requireAdmin() },
+    async (request, reply) => {
+      if (!request.user) {
+        return sendError(reply, 401, 'unauthorized', 'Authorization required');
+      }
+
+      try {
+        reloadEnv();
+        return reply.status(200).send({
+          message: 'Environment variables reloaded successfully'
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        request.log.error({ err: error }, 'Failed to reload environment variables');
+        return sendError(reply, 500, 'server_error', `Failed to reload environment: ${message}`);
+      }
     }
   );
 };

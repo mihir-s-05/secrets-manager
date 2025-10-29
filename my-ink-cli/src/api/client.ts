@@ -79,7 +79,17 @@ export class ApiClient {
         headers.Authorization = `Bearer ${snapshot.accessToken}`;
       }
 
-      const url = this.buildUrl(path, options.query);
+      // Merge query with implicit view-as for secrets endpoints
+      let mergedQuery = options.query ? { ...options.query } : undefined;
+      const isSecretsPath = path.startsWith('/secrets');
+      if (isSecretsPath) {
+        const viewAs = (snapshot as Partial<SessionSnapshot>).viewAsUserId;
+        if (viewAs) {
+          mergedQuery = { ...(mergedQuery ?? {}), asUserId: viewAs };
+        }
+      }
+
+      const url = this.buildUrl(path, mergedQuery);
       const response = await fetch(url, {
         method,
         headers,

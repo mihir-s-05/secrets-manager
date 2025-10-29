@@ -24,6 +24,7 @@ export interface ListProps<T> {
   loop?: boolean;
   focusId?: string;
   isActive?: boolean;
+  maxVisible?: number;
 }
 
 const DEFAULT_EMPTY = 'Nothing to show';
@@ -39,11 +40,16 @@ export function List<T>({
   initialIndex = 0,
   loop = true,
   focusId,
-  isActive = true
+  isActive = true,
+  maxVisible
 }: ListProps<T>) {
   const [activeIndex, setActiveIndex] = useState(Math.min(initialIndex, Math.max(items.length - 1, 0)));
   const focus = focusId ? useFocus({id: focusId, isActive}) : null;
-  const isFocused = focusId ? focus?.isFocused ?? false : isActive;
+  const isFocused = focusId ? (focus?.isFocused ?? isActive) : isActive;
+  const visibleCount = Math.max(1, Math.min(maxVisible ?? items.length, items.length));
+  const maxStart = Math.max(0, items.length - visibleCount);
+  const start = Math.min(Math.max(activeIndex - Math.floor(visibleCount / 2), 0), maxStart);
+  const end = Math.min(start + visibleCount, items.length);
 
   useEffect(() => {
     if (onFocusChange) {
@@ -93,7 +99,7 @@ export function List<T>({
 
     if (key.pageUp) {
       setActiveIndex((current) => {
-        const next = Math.max(current - 10, 0);
+        const next = Math.max(current - visibleCount, 0);
         if (onHighlight && items.length > 0) {
           const item = items[next];
           if (item) onHighlight(item, next);
@@ -105,7 +111,7 @@ export function List<T>({
 
     if (key.pageDown) {
       setActiveIndex((current) => {
-        const next = Math.min(current + 10, items.length - 1);
+        const next = Math.min(current + visibleCount, items.length - 1);
         if (onHighlight && items.length > 0) {
           const item = items[next];
           if (item) onHighlight(item, next);
@@ -139,9 +145,10 @@ export function List<T>({
 
   return (
     <Box flexDirection="column">
-      {items.map((item, index) => {
+      {items.slice(start, end).map((item, indexInWindow) => {
+        const index = start + indexInWindow;
         const key = itemKey ? itemKey(item, index) : index.toString();
-        const isHighlighted = index === activeIndex;
+        const isHighlighted = (start + indexInWindow) === activeIndex;
         const prefix = isHighlighted ? theme.focusPrefix : theme.unfocusedPrefix;
         const content = renderItem ? (
           renderItem({item, index, isHighlighted, isFocused})

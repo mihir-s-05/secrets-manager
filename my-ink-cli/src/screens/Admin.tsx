@@ -9,6 +9,7 @@ import Modal from '../components/Modal.js';
 import {List} from '../components/List.js';
 import {useAppServices} from '../app/App.js';
 import {useRouter} from '../app/Router.js';
+import {sessionStore} from '../state/session.js';
 import {
   addTeamMember,
   createTeam,
@@ -32,6 +33,7 @@ type AdminModal =
   | {kind: 'addMember'}
   | {kind: 'removeMember'}
   | {kind: 'toggleAdmin'}
+  | {kind: 'viewAs'}
   | null;
 
 const Admin: React.FC = () => {
@@ -68,8 +70,12 @@ const Admin: React.FC = () => {
   }, [client, notify]);
 
   useEffect(() => {
-    setEditing(false);
+    setEditing(!!modal);
     setEscapeHandler(() => {
+      if (modal) {
+        setModal(null);
+        return true;
+      }
       router.pop();
       return true;
     });
@@ -77,23 +83,23 @@ const Admin: React.FC = () => {
     return () => {
       setEscapeHandler(null);
     };
-  }, [loadDirectory, router, setEditing, setEscapeHandler]);
+  }, [loadDirectory, modal, router, setEditing, setEscapeHandler]);
 
-  // While a modal is open, treat the app as editing to suppress global shortcuts
-  useEffect(() => {
-    setEditing(!!modal);
-  }, [modal, setEditing]);
-
-  const actions: AdminAction[] = useMemo(
-    () => [
+  const actions: AdminAction[] = useMemo(() => {
+    const base: AdminAction[] = [
       {id: 'create-user', label: 'Create user', description: 'Invite a new user to the org'},
       {id: 'create-team', label: 'Create team', description: 'Spin up a new team'},
       {id: 'add-member', label: 'Add team member', description: 'Add an existing user to a team'},
       {id: 'remove-member', label: 'Remove team member', description: 'Remove a user from a team'},
       {id: 'toggle-admin', label: 'Toggle admin', description: 'Promote or demote an admin'}
-    ],
-    []
-  );
+    ];
+    if (session.viewAsUserId) {
+      base.push({id: 'exit-view-as', label: 'Exit view-as', description: 'Return to your admin view'});
+    } else {
+      base.push({id: 'view-as', label: 'View as user', description: 'Preview app as a specific user'});
+    }
+    return base;
+  }, [session.viewAsUserId]);
 
   const handleAction = (actionId: string) => {
     switch (actionId) {
@@ -111,6 +117,13 @@ const Admin: React.FC = () => {
         break;
       case 'toggle-admin':
         setModal({kind: 'toggleAdmin'});
+        break;
+      case 'view-as':
+        setModal({kind: 'viewAs'});
+        break;
+      case 'exit-view-as':
+        sessionStore.update({viewAsUserId: undefined, viewAsUserName: undefined});
+        notify('Exited view-as mode', 'success');
         break;
       default:
         break;
@@ -195,6 +208,12 @@ const Admin: React.FC = () => {
     }
   };
 
+  const handleViewAs = (user: User) => {
+    sessionStore.update({viewAsUserId: user.id, viewAsUserName: user.displayName ?? user.email});
+    notify(`Viewing as ${user.displayName ?? user.email}`, 'success');
+    setModal(null);
+  };
+
   useInput((input: string, key: Key) => {
     if (modal) {
       if (key.escape) {
@@ -247,6 +266,7 @@ const Admin: React.FC = () => {
           onAddMember={handleAddMember}
           onRemoveMember={handleRemoveMember}
           onToggleAdmin={handleToggleAdmin}
+          onViewAs={handleViewAs}
         />
       ) : null}
     </Box>
@@ -263,9 +283,10 @@ interface AdminModalProps {
   onAddMember: (teamId: string, userId: string) => void;
   onRemoveMember: (teamId: string, userId: string) => void;
   onToggleAdmin: (userId: string, next: boolean) => void;
+  onViewAs: (user: User) => void;
 }
 
-const AdminModal: React.FC<AdminModalProps> = ({state, teams, users, onCancel, onCreateTeam, onCreateUser, onAddMember, onRemoveMember, onToggleAdmin}) => {
+const AdminModal: React.FC<AdminModalProps> = ({state, teams, users, onCancel, onCreateTeam, onCreateUser, onAddMember, onRemoveMember, onToggleAdmin, onViewAs}) => {
   useInput((input: string, key: Key) => {
     if (key.escape) {
       onCancel();
@@ -294,6 +315,10 @@ const AdminModal: React.FC<AdminModalProps> = ({state, teams, users, onCancel, o
 
   if (state.kind === 'toggleAdmin') {
     return <ToggleAdminModal users={users} onSubmit={onToggleAdmin} />;
+  }
+
+  if (state.kind === 'viewAs') {
+    return <ViewAsModal users={users} onSubmit={onViewAs} />;
   }
 
   return null;
@@ -397,6 +422,19 @@ const ToggleAdminModal: React.FC<{users: User[]; onSubmit: (userId: string, next
         value: user
       }))}
       onSelect={(item) => onSubmit(item.value.id, !item.value.isAdmin)}
+    />
+    <Text color="gray">Esc to cancel</Text>
+  </Modal>
+);
+
+const ViewAsModal: React.FC<{users: User[]; onSubmit: (user: User) => void}> = ({users, onSubmit}) => (
+  <Modal title="View as user">
+    <SelectInput<User>
+      items={users.map((user) => ({
+        label: `${user.displayName ?? user.email} <${user.email}>`,
+        value: user
+      }))}
+      onSelect={(item) => onSubmit(item.value)}
     />
     <Text color="gray">Esc to cancel</Text>
   </Modal>
