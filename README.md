@@ -59,14 +59,14 @@ Both packages are published as Node workspaces and share the root `package-lock.
 4. Initialize the database and seed the default org/admin:
 
     ```bash
-    npm run --workspace backend prisma:migrate
-    npm run --workspace backend prisma:seed
+    npm run prisma:migrate
+    npm run prisma:seed
     ```
 
 5. Start the API:
 
     ```bash
-    npm run --workspace backend dev
+    npm run dev
     ```
 
    The server exposes:
@@ -82,7 +82,7 @@ Both packages are published as Node workspaces and share the root `package-lock.
 1. Build the CLI once:
 
     ```bash
-    npm run --workspace cli build
+    npm run build
     ```
 
    The bundled binary lives at `cli/dist/index.mjs`.
@@ -90,7 +90,7 @@ Both packages are published as Node workspaces and share the root `package-lock.
 2. (Optional) Link for a global `secrets` command:
 
     ```bash
-    npm run --workspace cli link
+    npm run link
     # now `secrets --help` is available
     ```
 
