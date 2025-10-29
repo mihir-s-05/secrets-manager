@@ -62,7 +62,15 @@ The Prisma schema models organizations, users, teams, secrets, ACLs, history, an
 
 ## Testing
 
-Vitest and Supertest provide the testing harness. The included smoke test boots the Fastify server on an ephemeral port and asserts that `GET /health` returns `200` and `{ ok: true }`. Run `npm test` to execute the suite.
+Vitest and Supertest drive the automated acceptance checks. The suite now covers:
+
+- Health: `GET /health` returns `200` with `{ ok: true }`.
+- Database: the seed script is idempotent and produces exactly one `Organization("Acme")` plus its admin user; Prisma CRUD operations succeed against SQLite.
+- Auth device flow (mocked GitHub): start/poll/refresh/logout issue tokens, refresh sessions, and revoke on logout while enforcing consistent error payloads.
+- Org & admin scoping: directory and admin routes honor the caller's organization and privilege level.
+- Rate limiting: repeated `/auth/poll` requests hit the server-side limiter and emit the expected `Retry-After` header.
+
+Each Vitest file uses an isolated SQLite database (e.g. `auth-flow.test.db`, `database.test.db`) that is created and reset automatically during `beforeEach` hooks. After installing dependencies, run `npm test` (or `npx vitest run`) to execute the entire suite.
 
 ## Health Route
 
